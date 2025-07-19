@@ -18,6 +18,7 @@ A real-time, AI-powered Smart Traffic Dashboard built with **Flask**, **YOLOv8**
 
 ## Steps to run 
 1. Create a virtual environment and activate
+   
     python -m venv venv
     source venv/bin/activate       # Linux/macOS
     venv\Scripts\activate          # Windows
