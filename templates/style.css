@@ -1,0 +1,106 @@
+root {
+      --primary: #4f46e5;
+      --background: #f0f4f8;
+      --card-bg: #ffffff;
+      --text: #1e293b;
+      --light: #e0f2fe;
+      --danger: #ef4444;
+      --warning: #facc15;
+      --success: #22c55e;
+    }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: var(--background);
+      margin: 0;
+      padding: 0;
+      color: var(--text);
+    }
+    header {
+      background: var(--primary);
+      color: white;
+      padding: 1.5rem;
+      text-align: center;
+    }
+    header h1 {
+      margin: 0;
+    }
+    .status-bar {
+      display: flex;
+      justify-content: space-around;
+      background: var(--card-bg);
+      padding: 1rem;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .status-item {
+      text-align: center;
+    }
+    .status-value {
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+    .dashboard-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1rem;
+      padding: 1rem;
+    }
+    .card {
+      background: var(--card-bg);
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    .card h2 {
+      margin-top: 0;
+      color: var(--primary);
+    }
+    .vehicle-counts {
+      display: flex;
+      justify-content: space-around;
+      margin-top: 1rem;
+      text-align: center;
+    }
+    .vehicle-box {
+      flex: 1;
+    }
+    .vehicle-box span {
+      display: block;
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+    .alert {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 8px;
+      font-weight: bold;
+    }
+    .alert-danger {
+      background-color: #fee2e2;
+      color: var(--danger);
+    }
+    .alert-warning {
+      background-color: #fef3c7;
+      color: var(--warning);
+    }
+    .alert-success {
+      background-color: #dcfce7;
+      color: var(--success);
+    }
+    canvas {
+      width: 100% !important;
+      height: 300px !important;
+    }
+    img {
+      max-width: 100%;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+    }
+    .btn {
+      padding: 0.5rem 1rem;
+      border: none;
+      background: var(--primary);
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 1rem;
+    }
