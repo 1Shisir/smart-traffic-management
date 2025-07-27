@@ -1,6 +1,6 @@
 # 🚦 Smart Traffic Monitoring System
 
-A real-time, AI-powered Smart Traffic Dashboard built with **Flask**, **YOLOv8**, **Socket.IO**, and **SQLite**, capable of detecting vehicles (cars, buses, trucks, motorcycles) from video feeds and visualizing traffic trends live.
+A real-time, AI-powered Smart Traffic Dashboard built with Flask, YOLOv8, Socket.IO, and SQLite, capable of detecting vehicles (cars, buses, trucks, motorcycles) from video feeds and visualizing traffic trends live.
 
 ---
 
@@ -18,9 +18,9 @@ A real-time, AI-powered Smart Traffic Dashboard built with **Flask**, **YOLOv8**
 
 ## Steps to run 
 1. Create a virtual environment and activate
-    python -m venv venv
-    source venv/bin/activate       # Linux/macOS
-    venv\Scripts\activate          # Windows
+  Open terminal in your root folder and then type " python -m venv venv"
+  Then " source venv/bin/activate " for mac/linux or "venv\Scripts\activate "  for windows
+   
 
 2.Install all the requirements
   Type  "pip install -r requirements.txt"
