@@ -18,15 +18,14 @@ A real-time, AI-powered Smart Traffic Dashboard built with **Flask**, **YOLOv8**
 
 ## Steps to run 
 1. Create a virtual environment and activate
-    python -m venv venv
-    source venv/bin/activate       # Linux/macOS
-    venv\Scripts\activate          # Windows
+  Open terminal in your root folder and then type " python -m venv venv"
+  Then " source venv/bin/activate " for mac/linux or "venv\Scripts\activate "  for windows
 
 2.Install all the requirements
-    pip install -r requirements.txt
+  Type  "pip install -r requirements.txt"
 
 3.Run the app
-    python main.py
+  Type  "python main.py"
 
 
 
