@@ -3,6 +3,7 @@
 A real-time, AI-powered Smart Traffic Dashboard built with Flask, YOLOv8, Socket.IO, and SQLite, capable of detecting vehicles (cars, buses, trucks, motorcycles) from video feeds and visualizing traffic trends live.
 
 ---
+(updated)
 
 ## 🌟 Features
 
