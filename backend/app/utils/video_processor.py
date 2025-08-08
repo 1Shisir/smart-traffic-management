@@ -52,96 +52,95 @@ def process_video(app, socketio, session):
         model = YOLO(Config.YOLO_MODEL).to(device)
         vehicle_labels = {'car', 'bus', 'truck', 'motorcycle'}
 
-        cap = cv2.VideoCapture(Config.VIDEO_PATH)
-        if not cap.isOpened():
-            logging.error("Error opening video file")
-            return
-
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        logging.info(f"Processing video: {Config.VIDEO_PATH} ({total_frames} frames)")
-
-        frame_count = 0
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            frame_count += 1
-            if frame_count % 10 != 0:
+        while True:  # Main loop to continuously process the video
+            cap = cv2.VideoCapture(Config.VIDEO_PATH)
+            if not cap.isOpened():
+                logging.error("Error opening video file")
+                time.sleep(5)  # Wait before retrying
                 continue
 
-            total_count, class_counts, annotated = detect_vehicles(frame, model, vehicle_labels)
-            frame_for_preview = annotated.copy()
-            timestamp = datetime.now()
-            light_state, light_duration = get_traffic_light_state(total_count)
-            logging.info(f"Frame {frame_count}: Vehicles -> Total: {total_count}, Traffic Light: {light_state}")
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            logging.info(f"Processing video: {Config.VIDEO_PATH} ({total_frames} frames, {fps} fps)")
 
-            
-            try:
-                entries_buffer.append(TrafficData(
-                    junction="main_junction",
-                    total_count=total_count,
-                    car_count=class_counts['car'],
-                    bus_count=class_counts['bus'],
-                    truck_count=class_counts['truck'],
-                    motorcycle_count=class_counts['motorcycle'],
-                    traffic_light=light_state,
-                    light_duration=light_duration,
-                    timestamp=timestamp
-                ))
+            frame_count = 0
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break  # End of video, will restart from beginning
 
-                if len(entries_buffer) >= 10:
-                    session.bulk_save_objects(entries_buffer)
-                    session.commit()
-                    entries_buffer = []
+                frame_count += 1
+                if frame_count % 10 != 0:  # Process every 10th frame
+                    continue
 
-                socketio.emit('update', {
-                    'junction': "main_junction",
-                    'count': total_count,
-                    'car': class_counts['car'],
-                    'bus': class_counts['bus'],
-                    'truck': class_counts['truck'],
-                    'motorcycle': class_counts['motorcycle'],
-                    'time': timestamp.strftime("%H:%M:%S")
-                })
+                # Vehicle detection
+                total_count, class_counts, annotated = detect_vehicles(frame, model, vehicle_labels)
+                frame_for_preview = annotated.copy()
+                timestamp = datetime.now()
+                light_state, light_duration = get_traffic_light_state(total_count)
+                
+                logging.info(f"Frame {frame_count}: Vehicles -> Total: {total_count}, Traffic Light: {light_state}")
 
-                socketio.emit('traffic_light', {
-                    'state': light_state,
-                    'duration': light_duration
-                })
-                # Uncomment if you want to send data to Node-RED
-                # This part is commented out to avoid unnecessary requests
-                # payload = {
-                #     "junction": "main_junction",
-                #     "total": total_count,
-                #     "car": class_counts['car'],
-                #     "bus": class_counts['bus'],
-                #     "truck": class_counts['truck'],
-                #     "motorcycle": class_counts['motorcycle'],
-                #     "traffic_light": light_state,
-                #     "light_duration": light_duration,
-                #     "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S")
-                # }
-                # try:
-                #     res = requests.post(Config.NODE_RED_URL, json=payload, timeout=Config.NODE_RED_TIMEOUT)
-                #     logging.info(f"Node-RED POST: {res.status_code}")
-                # except requests.exceptions.Timeout:
-                #     logging.warning("Node-RED request timed out")
-                # except requests.exceptions.RequestException as e:
-                #     logging.error(f"Node-RED error: {e}")
+                try:
+                    # Buffer data for database
+                    entries_buffer.append(TrafficData(
+                        junction="main_junction",
+                        total_count=total_count,
+                        car_count=class_counts['car'],
+                        bus_count=class_counts['bus'],
+                        truck_count=class_counts['truck'],
+                        motorcycle_count=class_counts['motorcycle'],
+                        traffic_light=light_state,
+                        light_duration=light_duration,
+                        timestamp=timestamp
+                    ))
 
-            except Exception as e:
-                logging.error(f"Database error: {e}")
-                session.rollback()
+                    # Commit to database in batches
+                    if len(entries_buffer) >= 10:
+                        session.bulk_save_objects(entries_buffer)
+                        session.commit()
+                        entries_buffer = []
 
-            time.sleep(0.1)
+                    # Real-time updates via SocketIO
+                    socketio.emit('update', {
+                        'junction': "main_junction",
+                        'count': total_count,
+                        'car': class_counts['car'],
+                        'bus': class_counts['bus'],
+                        'truck': class_counts['truck'],
+                        'motorcycle': class_counts['motorcycle'],
+                        'time': timestamp.strftime("%H:%M:%S"),
+                        'frame_count': frame_count,
+                        'total_frames': total_frames
+                    }, namespace='/dashboard')
 
-        if entries_buffer:
-            session.bulk_save_objects(entries_buffer)
-            session.commit()
+                    socketio.emit('traffic_light', {
+                        'state': light_state,
+                        'duration': light_duration
+                    }, namespace='/dashboard')
 
-        cap.release()
-        logging.info("Video processing completed")
+                    # Optional: Send frame preview for visualization
+                    if frame_for_preview is not None:
+                        ret, buffer = cv2.imencode('.jpg', frame_for_preview)
+                        if ret:
+                            socketio.emit('frame_update', {
+                                'image': buffer.tobytes()
+                            }, namespace='/dashboard')
+
+                except Exception as e:
+                    logging.error(f"Database/SocketIO error: {e}")
+                    session.rollback()
+
+                # Adjust sleep time based on video FPS for real-time simulation
+                time.sleep(1/fps if fps > 0 else 0.1)
+
+            # End of video - clean up and prepare for next loop
+            cap.release()
+            logging.info("Restarting video processing...")
+            time.sleep(1)  # Brief pause before restarting
 
     except Exception as e:
         logging.error(f"Error in video processing: {e}")
+        if 'cap' in locals() and cap.isOpened():
+            cap.release()
+        time.sleep(5)  # Wait before attempting to restart

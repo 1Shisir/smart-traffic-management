@@ -4,143 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Smart Traffic Dashboard</title>
-  <link rel="manifest" href="/manifest.json">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
-  <style>
-    :root {
-      --primary: #4f46e5;
-      --background: #f0f4f8;
-      --card-bg: #ffffff;
-      --text: #1e293b;
-      --light: #e0f2fe;
-      --danger: #ef4444;
-      --warning: #facc15;
-      --success: #22c55e;
-    }
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      background: var(--background);
-      margin: 0;
-      padding: 0;
-      color: var(--text);
-    }
-    header {
-      background: var(--primary);
-      color: white;
-      padding: 1.5rem;
-      text-align: center;
-    }
-    header h1 {
-      margin: 0;
-    }
-    .status-bar {
-      display: flex;
-      justify-content: space-around;
-      background: var(--card-bg);
-      padding: 1rem;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    }
-    .status-item {
-      text-align: center;
-    }
-    .status-value {
-      font-size: 1.5rem;
-      font-weight: bold;
-    }
-    .dashboard-container {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 1rem;
-      padding: 1rem;
-    }
-    .card {
-      background: var(--card-bg);
-      padding: 1.5rem;
-      border-radius: 12px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-    }
-    .card h2 {
-      margin-top: 0;
-      color: var(--primary);
-    }
-    .vehicle-counts {
-      display: flex;
-      justify-content: space-around;
-      margin-top: 1rem;
-      text-align: center;
-    }
-    .vehicle-box {
-      flex: 1;
-    }
-    .vehicle-box span {
-      display: block;
-      font-size: 1.2rem;
-      font-weight: bold;
-    }
-    .alert {
-      margin-top: 1rem;
-      padding: 1rem;
-      border-radius: 8px;
-      font-weight: bold;
-    }
-    .alert-danger {
-      background-color: #fee2e2;
-      color: var(--danger);
-    }
-    .alert-warning {
-      background-color: #fef3c7;
-      color: var(--warning);
-    }
-    .alert-success {
-      background-color: #dcfce7;
-      color: var(--success);
-    }
-    canvas {
-      width: 100% !important;
-      height: 300px !important;
-    }
-    img {
-      max-width: 100%;
-      border-radius: 10px;
-      border: 1px solid #ccc;
-    }
-    .btn {
-      padding: 0.5rem 1rem;
-      border: none;
-      background: var(--primary);
-      color: white;
-      border-radius: 8px;
-      cursor: pointer;
-      margin-top: 1rem;
-    }
-    .traffic-light {
-  border: 2px solid #333;
-  border-radius: 10px;
-  padding: 10px;
-  display: inline-block;
-  background: #222;
-}
-.light {
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  margin: 5px;
-}
-.red { background: red; }
-.yellow { background: yellow; }
-.green { background: green; }
-.timer {
-  font-size: 24px;
-  text-align: center;
-  color: white;
-  margin-top: 10px;
-}
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
 </head>
 <body>
   <header>
     <h1>🚦 Smart Traffic Dashboard</h1>
+    <button class="logout-btn" onclick="logout()">Logout</button>
   </header>
 
   <div class="status-bar">
@@ -159,7 +32,6 @@
       <h2>Current Vehicle Count</h2>
       <div class="status-value" id="current_count">0</div>
       <p>Last updated: <span id="last_update">--:--:--</span></p>
-
       <div class="vehicle-counts">
         <div class="vehicle-box">
           <span id="car-count">0</span>
@@ -178,7 +50,6 @@
           🏍️ Motorcycles
         </div>
       </div>
-
       <div id="alert" class="alert">Awaiting data...</div>
       <div><strong>Status:</strong> <span id="traffic-status">No data</span></div>
     </div>
@@ -190,23 +61,32 @@
 
     <div class="card">
       <h2>Live Detection Video</h2>
-        <video id="video-preview" width="100%" controls autoplay muted>
+      <video id="video-preview" width="100%" controls autoplay muted>
         <source src="/video-stream" type="video/mp4">
-            Your browser does not support the video tag.
-        </video>
+        Your browser does not support the video tag.
+      </video>
+      <button class="btn" id="refresh-preview">Refresh Video</button>
     </div>
 
-    <div class="traffic-light">
-  <div class="light red" id="red-light"></div>
-  <div class="light yellow" id="yellow-light"></div>
-  <div class="light green" id="green-light"></div>
-  <div class="timer" id="light-timer">00</div>
-</div>
-
+    <div class="card">
+      <h2>Traffic Light Control</h2>
+      <div class="traffic-control">
+        <div class="traffic-light-container">
+          <div class="traffic-light red" id="red-light"></div>
+          <div class="traffic-light yellow" id="yellow-light"></div>
+          <div class="traffic-light green" id="green-light"></div>
+        </div>
+        <div class="traffic-pole"></div>
+        <div class="traffic-timer" id="light-timer">--</div>
+        <div class="traffic-phase" id="light-phase">Initializing...</div>
+      </div>
+    </div>
   </div>
 
   <script>
-    const socket = io();
+    const socket = io('/dashboard', {
+      withCredentials: true
+    });
     const chart = new Chart(document.getElementById('trafficChart').getContext('2d'), {
       type: 'line',
       data: {
@@ -223,18 +103,46 @@
       options: {
         responsive: true,
         scales: {
-          y: {
-            beginAtZero: true,
-            title: { display: true, text: 'Vehicles' }
-          },
-          x: {
-            title: { display: true, text: 'Time' }
-          }
+          y: { beginAtZero: true, title: { display: true, text: 'Vehicles' } },
+          x: { title: { display: true, text: 'Time' } }
+        },
+        plugins: {
+          legend: { display: true, position: 'top' },
+          tooltip: { backgroundColor: '#1e293b', titleFont: { weight: 'bold' } }
         }
       }
     });
 
+    // Traffic light state management
+    let currentLightState = null;
+    let lightTimer = null;
+
+    function updateTrafficLight(data) {
+      if (lightTimer) clearInterval(lightTimer);
+      document.getElementById('light-phase').textContent = 
+        data.state.charAt(0).toUpperCase() + data.state.slice(1) + " Light";
+      document.querySelectorAll('.traffic-light').forEach(light => light.classList.remove('active'));
+      const activeLight = document.getElementById(data.state + '-light');
+      if (activeLight) activeLight.classList.add('active');
+      let seconds = data.duration;
+      updateTimerDisplay(seconds);
+      lightTimer = setInterval(() => {
+        seconds--;
+        updateTimerDisplay(seconds);
+        if (seconds <= 0) clearInterval(lightTimer);
+      }, 1000);
+      currentLightState = data.state;
+    }
+
+    function updateTimerDisplay(seconds) {
+      const timerElement = document.getElementById('light-timer');
+      timerElement.textContent = seconds >= 0 ? seconds : '--';
+      timerElement.style.color = seconds < 5 && currentLightState === 'red' ? '#ff4444' :
+                                seconds < 3 && currentLightState === 'yellow' ? '#ffcc00' : 'inherit';
+    }
+
     socket.on('update', data => {
+      console.log("Received update via socket:", data);
       document.getElementById('current_count').textContent = data.count;
       document.getElementById('last_update').textContent = data.time;
       document.getElementById('last-detection').textContent = data.time;
@@ -245,7 +153,6 @@
 
       const statusEl = document.getElementById('traffic-status');
       const alertEl = document.getElementById('alert');
-
       if (data.count > 15) {
         statusEl.textContent = "Heavy Traffic";
         statusEl.style.color = '#ef4444';
@@ -265,38 +172,41 @@
 
       chart.data.labels.push(data.time);
       chart.data.datasets[0].data.push(data.count);
-      if (chart.data.labels.length > 20) {
+      if (chart.data.labels.length > 30) {
         chart.data.labels.shift();
         chart.data.datasets[0].data.shift();
       }
-      chart.update();
+      chart.update('none');
     });
+
+    socket.on('traffic_light', updateTrafficLight);
 
     document.getElementById('refresh-preview').addEventListener('click', () => {
-      document.getElementById('video-preview').src = '/video-preview?' + new Date().getTime();
+      const video = document.getElementById('video-preview');
+      video.src = '/video-stream?' + new Date().getTime();
+      video.load();
     });
 
+    // Logout functionality
+    async function logout() {
+      try {
+        const response = await fetch('/logout', {
+          method: 'POST',
+          credentials: 'include'
+        });
+        if (response.redirected) {
+          window.location.href = response.url;
+        } else {
+          alert('Logout failed. Please try again.');
+        }
+      } catch (error) {
+        console.error('Logout error:', error);
+        alert('Error during logout. Please try again.');
+      }
+    }
+
+    // Initialize traffic light
+    updateTrafficLight({state: 'red', duration: 0});
   </script>
-  <script>
-socket.on('traffic_light', function(data) {
-  // Reset all lights
-  document.querySelectorAll('.light').forEach(light => {
-    light.style.opacity = 0.3;
-  });
-  
-  // Activate current light
-  document.getElementById(data.state + '-light').style.opacity = 1;
-  
-  // Start countdown timer
-  let seconds = data.duration;
-  document.getElementById('light-timer').textContent = seconds;
-  
-  const timer = setInterval(() => {
-    seconds--;
-    document.getElementById('light-timer').textContent = seconds;
-    if(seconds <= 0) clearInterval(timer);
-  }, 1000);
-});
-</script>
 </body>
 </html>

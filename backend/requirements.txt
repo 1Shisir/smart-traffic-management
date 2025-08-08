@@ -3,5 +3,7 @@ numpy
 flask
 flask-socketio
 sqlalchemy
-ultraytics
 eventlet
+Flask-JWT-Extended
+bcrypt
+ultralytics

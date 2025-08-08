@@ -16,4 +16,4 @@ if __name__ == '__main__':
 
     threading.Thread(target=process_video, args=(app, socketio, session), daemon=True).start()
     logging.info("Starting Flask server")
-    socketio.run(app, debug=True, use_reloader=False)
+    socketio.run(app, debug=True, use_reloader=False)  # use_reloader=False to prevent double execution in debug mode

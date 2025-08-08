@@ -1,17 +1,54 @@
-from flask import Blueprint, render_template, jsonify, send_file
+from flask import Blueprint, render_template, jsonify, send_file,request,make_response,redirect,url_for
 import io
 import cv2
 import logging
+from flask_jwt_extended import jwt_required,create_access_token, unset_jwt_cookies,set_access_cookies,get_jwt_identity
 from app.models.traffic_data import TrafficData
+from app.models.user import User
+from app.config import Config
+
 
 api = Blueprint('api', __name__)
 frame_for_preview = None
 
-@api.route('/')
+@api.route('/dashboard')
+@jwt_required()
 def dashboard():
+    # username = get_jwt_identity()
     return render_template('dashboard.html')
 
+@api.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        from app import Session
+        session = Session()
+        username = request.form.get('username')
+        password = request.form.get('password')
+        user = session.query(User).filter_by(username=username).first()
+        if user and user.check_password(password):
+            try:
+                access_token = create_access_token(identity=username)
+                response = make_response(redirect(url_for('api.dashboard')))
+                set_access_cookies(response, access_token)
+                logging.info(f"User {username} logged in successfully, redirecting to dashboard")
+                return response
+            except Exception as e:
+                logging.error(f"Error setting JWT cookie for {username}: {e}")
+                return render_template('login.html', error='Login failed, please try again')
+        logging.warning(f"Failed login attempt for username: {username}")
+        return render_template('login.html', error='Invalid credentials')
+    return render_template('login.html', error=None)
+
+@api.route('/logout', methods=['POST'])
+@jwt_required()
+def logout():
+    response = make_response(redirect(url_for('api.login')))
+    unset_jwt_cookies(response)
+    logging.info(f"User {get_jwt_identity()} logged out")
+    return response
+
 @api.route('/api/data')
+@jwt_required()
 def traffic_data():
     try:
         from app import Session
@@ -33,6 +70,7 @@ def traffic_data():
         return jsonify([])
 
 @api.route('/video-preview')
+@jwt_required()
 def video_preview():
     try:
         global frame_for_preview
@@ -49,10 +87,11 @@ def video_preview():
         return "Preview unavailable", 500
 
 @api.route('/video-stream')
+@jwt_required()
 def video_stream():
-    from app.config import Config
     try:
-        return send_file(Config.VIDEO_PATH, mimetype='video/mp4')
+        video_path = Config.VIDEO_PATH
+        return send_file(video_path, mimetype='video/mp4')
     except Exception as e:
         logging.error(f"Video stream error: {e}")
         return "Video not available", 500
