@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Smart Traffic Dashboard</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 
@@ -13,7 +12,12 @@
 <body>
   <header>
     <h1>🚦 Smart Traffic Dashboard</h1>
-    <button class="logout-btn" onclick="logout()">Logout</button>
+    <div class="header-controls">
+      <button class="start-btn" id="start-processing">Start Processing</button>
+      <button class="stop-btn" id="stop-processing" style="display: none;">Stop Processing</button>
+      <button class="danger-btn" id="stop-server">Stop Server</button>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
   </header>
 
   <div class="status-bar">
@@ -50,22 +54,18 @@
           🏍️ Motorcycles
         </div>
       </div>
-      <div id="alert" class="alert">Awaiting data...</div>
+      <div id="alert" class="alert alert-warning">Click "Start Processing" to begin</div>
       <div><strong>Status:</strong> <span id="traffic-status">No data</span></div>
+      <div><strong>Last Update:</strong> <span id="last-detection">Never</span></div>
     </div>
 
     <div class="card">
-      <h2>Traffic Trends</h2>
-      <canvas id="trafficChart"></canvas>
-    </div>
-
-    <div class="card">
-      <h2>Live Detection Video</h2>
-      <video id="video-preview" width="100%" controls autoplay muted>
+      <h2>Video Stream</h2>
+      <video id="video-stream" width="100%" controls muted style="max-width: 640px;">
         <source src="/video-stream" type="video/mp4">
         Your browser does not support the video tag.
       </video>
-      <button class="btn" id="refresh-preview">Refresh Video</button>
+      <button class="btn" id="refresh-stream">Refresh Stream</button>
     </div>
 
     <div class="card">
@@ -84,38 +84,100 @@
   </div>
 
   <script>
-    const socket = io('/dashboard', {
-      withCredentials: true
+    const socket = io('http://localhost:5000', {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      withCredentials: true  // Include cookies for authentication
     });
-    const chart = new Chart(document.getElementById('trafficChart').getContext('2d'), {
-      type: 'line',
-      data: {
-        labels: [],
-        datasets: [{
-          label: 'Total Vehicles',
-          data: [],
-          borderColor: '#4f46e5',
-          backgroundColor: 'rgba(79,70,229,0.1)',
-          fill: true,
-          tension: 0.4
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: {
-          y: { beginAtZero: true, title: { display: true, text: 'Vehicles' } },
-          x: { title: { display: true, text: 'Time' } }
-        },
-        plugins: {
-          legend: { display: true, position: 'top' },
-          tooltip: { backgroundColor: '#1e293b', titleFont: { weight: 'bold' } }
-        }
+
+    socket.on('connect', () => {
+      console.log('SocketIO connected');
+      // Get current processing status on connect
+      socket.emit('get_processing_status', {});
+      loadRecentData();
+    });
+
+    socket.on('connection_status', (data) => {
+      console.log('Connection confirmed for user:', data.user);
+      document.getElementById('system-status').textContent = '🟢 Connected';
+    });
+
+    socket.on('auth_required', (data) => {
+      console.log('Authentication required:', data);
+      alert('Session expired. Please login again.');
+      window.location.href = '/login';
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('SocketIO connection error:', error);
+      document.getElementById('system-status').textContent = '🔴 Connection Error';
+      loadRecentData();
+      startPolling();
+    });
+
+    socket.on('disconnect', () => {
+      console.log('SocketIO disconnected');
+      document.getElementById('system-status').textContent = '🔴 Disconnected';
+      startPolling();
+    });
+
+    socket.on('processing_started', (data) => {
+      console.log('Processing started:', data);
+      document.getElementById('system-status').textContent = '🟢 Processing Active';
+      document.getElementById('alert').textContent = `Processing started: ${data.message}`;
+      document.getElementById('alert').className = 'alert alert-success';
+      
+      // Update button states
+      document.getElementById('start-processing').style.display = 'none';
+      document.getElementById('stop-processing').style.display = 'inline-block';
+    });
+
+    socket.on('processing_stopped', (data) => {
+      console.log('Processing stopped:', data);
+      document.getElementById('system-status').textContent = '🔴 Inactive';
+      document.getElementById('alert').textContent = `Processing stopped: ${data.message}`;
+      document.getElementById('alert').className = 'alert alert-warning';
+      
+      // Update button states
+      document.getElementById('start-processing').style.display = 'inline-block';
+      document.getElementById('stop-processing').style.display = 'none';
+    });
+
+    socket.on('processing_error', (data) => {
+      console.error('Processing error:', data);
+      document.getElementById('system-status').textContent = '🔴 Error';
+      document.getElementById('alert').textContent = `Error: ${data.message}`;
+      document.getElementById('alert').className = 'alert alert-danger';
+      
+      // Reset button states
+      document.getElementById('start-processing').style.display = 'inline-block';
+      document.getElementById('stop-processing').style.display = 'none';
+    });
+
+    socket.on('processing_status', (data) => {
+      console.log('Processing status:', data);
+      if (data.active) {
+        document.getElementById('system-status').textContent = '🟢 Processing Active';
+        document.getElementById('start-processing').style.display = 'none';
+        document.getElementById('stop-processing').style.display = 'inline-block';
+      } else {
+        document.getElementById('system-status').textContent = '🔴 Inactive';
+        document.getElementById('start-processing').style.display = 'inline-block';
+        document.getElementById('stop-processing').style.display = 'none';
       }
     });
 
     // Traffic light state management
     let currentLightState = null;
     let lightTimer = null;
+    let statsData = {
+      totalDetected: 0,
+      peakCount: 0,
+      avgSpeed: 0,
+      densityLevel: 'Low'
+    };
 
     function updateTrafficLight(data) {
       if (lightTimer) clearInterval(lightTimer);
@@ -170,22 +232,131 @@
         alertEl.className = "alert alert-success";
       }
 
-      chart.data.labels.push(data.time);
-      chart.data.datasets[0].data.push(data.count);
-      if (chart.data.labels.length > 30) {
-        chart.data.labels.shift();
-        chart.data.datasets[0].data.shift();
+      // Update stats
+      statsData.totalDetected += data.count;
+      statsData.peakCount = Math.max(statsData.peakCount, data.count);
+      statsData.densityLevel = data.count > 15 ? 'High' : data.count > 10 ? 'Medium' : 'Low';
+      
+      document.getElementById('total-detected').textContent = statsData.totalDetected;
+      document.getElementById('peak-count').textContent = statsData.peakCount;
+      document.getElementById('traffic-density').textContent = statsData.densityLevel;
+      
+      // Update traffic light if data includes light info
+      if (data.traffic_light && data.light_duration) {
+        updateTrafficLight({
+          state: data.traffic_light,
+          duration: data.light_duration
+        });
       }
-      chart.update('none');
+      
+      // Update system status to show it's actively receiving data
+      document.getElementById('system-status').textContent = '🟢 Processing Active';
     });
 
     socket.on('traffic_light', updateTrafficLight);
 
-    document.getElementById('refresh-preview').addEventListener('click', () => {
-      const video = document.getElementById('video-preview');
+    document.getElementById('refresh-stream').addEventListener('click', () => {
+      const video = document.getElementById('video-stream');
       video.src = '/video-stream?' + new Date().getTime();
       video.load();
     });
+    async function loadRecentData() {
+      try {
+        const response = await fetch('/api/data', { credentials: 'include' });
+        if (response.ok) {
+          const result = await response.json();
+          console.log('Fetched recent data:', result);
+          
+          // Handle new API response format
+          const data = result.data || result;
+          if (data && data.length > 0) {
+            const latest = data[0];
+            document.getElementById('current_count').textContent = latest.total;
+            document.getElementById('car-count').textContent = latest.car;
+            document.getElementById('bus-count').textContent = latest.bus;
+            document.getElementById('truck-count').textContent = latest.truck;
+            document.getElementById('motorcycle-count').textContent = latest.motorcycle;
+            document.getElementById('last_update').textContent = latest.timestamp.split(' ')[1];
+            
+            updateTrafficLight({
+              state: latest.traffic_light,
+              duration: latest.light_duration
+            });
+          }
+        } else {
+          console.error('Failed to fetch recent data:', response.status);
+          document.getElementById('alert').textContent = 'Failed to load recent data';
+          document.getElementById('alert').className = 'alert alert-danger';
+        }
+      } catch (error) {
+        console.error('Error fetching recent data:', error);
+        document.getElementById('alert').textContent = `Error fetching data: ${error.message}`;
+        document.getElementById('alert').className = 'alert alert-danger';
+      }
+    }
+
+    function startPolling() {
+      if (pollingInterval) clearInterval(pollingInterval);
+      pollingInterval = setInterval(loadRecentData, 10000); // Poll every 10 seconds
+    }
+
+    // Button event handlers
+    document.getElementById('start-processing').addEventListener('click', () => {
+      socket.emit('start_processing', { junction: 'junction1' });
+      console.log('Emitted start_processing event');
+      document.getElementById('alert').textContent = 'Starting video processing...';
+      document.getElementById('alert').className = 'alert alert-warning';
+      document.getElementById('start-processing').disabled = true;
+      
+      // Re-enable button after delay
+      setTimeout(() => {
+        document.getElementById('start-processing').disabled = false;
+      }, 3000);
+    });
+
+    document.getElementById('stop-processing').addEventListener('click', () => {
+      socket.emit('stop_processing', {});
+      console.log('Emitted stop_processing event');
+      document.getElementById('alert').textContent = 'Stopping video processing...';
+      document.getElementById('alert').className = 'alert alert-warning';
+      document.getElementById('stop-processing').disabled = true;
+      
+      // Re-enable button after delay
+      setTimeout(() => {
+        document.getElementById('stop-processing').disabled = false;
+      }, 3000);
+    });
+
+    document.getElementById('stop-server').addEventListener('click', () => {
+      if (confirm('Are you sure you want to stop the server? This will disconnect all users.')) {
+        socket.emit('stop_server', {});
+        console.log('Emitted stop_server event');
+        document.getElementById('alert').textContent = 'Server shutdown initiated...';
+        document.getElementById('alert').className = 'alert alert-danger';
+        
+        // Disconnect and redirect after delay
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 2000);
+      }
+    });
+
+    // Re-enable buttons and update UI based on events
+    socket.on('processing_started', (data) => {
+      document.getElementById('start-processing').disabled = false;
+      document.getElementById('stop-processing').disabled = false;
+    });
+
+    socket.on('processing_stopped', (data) => {
+      document.getElementById('start-processing').disabled = false;
+      document.getElementById('stop-processing').disabled = false;
+    });
+
+    socket.on('processing_error', (data) => {
+      document.getElementById('start-processing').disabled = false;
+      document.getElementById('stop-processing').disabled = false;
+    });
+
 
     // Logout functionality
     async function logout() {

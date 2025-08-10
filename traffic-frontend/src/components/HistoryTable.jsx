@@ -24,14 +24,14 @@ const HistoryTable = ({ history }) => {
           ) : (
             history.map((row, index) => (
               <tr key={index}>
-                <td className="border p-2">{row.junction}</td>
-                <td className="border p-2">{row.timestamp}</td>
-                <td className="border p-2">{row.total}</td>
-                <td className="border p-2">{row.car}</td>
-                <td className="border p-2">{row.bus}</td>
-                <td className="border p-2">{row.truck}</td>
-                <td className="border p-2">{row.motorcycle}</td>
-                <td className="border p-2">{row.traffic_light}</td>
+                <td className="border p-2">{row.junction || 'Main St & 1st Ave'}</td>
+                <td className="border p-2">{row.time || row.timestamp || new Date(row.created_at).toLocaleString()}</td>
+                <td className="border p-2">{row.total_count || row.total || 0}</td>
+                <td className="border p-2">{row.car_count || row.car || 0}</td>
+                <td className="border p-2">{row.bus_count || row.bus || 0}</td>
+                <td className="border p-2">{row.truck_count || row.truck || 0}</td>
+                <td className="border p-2">{row.motorcycle_count || row.motorcycle || 0}</td>
+                <td className="border p-2">{row.traffic_light || 'green'}</td>
               </tr>
             ))
           )}

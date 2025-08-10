@@ -1,13 +1,34 @@
-Traffic Monitoring System
-This project is a real-time traffic monitoring system that uses YOLOv8 for vehicle detection, Flask with SocketIO for backend processing, SQLite for data storage, and a React frontend for visualization. It detects vehicles (cars, buses, trucks, motorcycles) in a video feed, calculates traffic density, simulates traffic light states (Green, Yellow, Red) with durations, and displays real-time and historical data on a responsive dashboard.
-Features
+# Smart Traffic Management System - Backend
 
-Vehicle Detection: Uses YOLOv8 (yolov8n.pt) to detect vehicles in a video feed, with GPU acceleration if available.
-Traffic Light Simulation: Adjusts traffic light state and duration based on traffic density (e.g., Green for low traffic, Red for high).
-Real-Time Updates: Sends vehicle counts and traffic light states to the frontend via SocketIO.
-Data Storage: Stores detection results in SQLite (traffic.db) with batch inserts for efficiency.
-Frontend Visualization:
-Displays real-time vehicle counts, traffic light state, and video preview.
+A Flask-based backend application for processing traffic video feeds and managing traffic data using computer vision and machine learning.
+
+## Features
+
+- 🚦 Real-time traffic monitoring using YOLO object detection
+- 📊 Traffic data collection and analysis
+- 🔐 JWT-based authentication system
+- 🌐 WebSocket support for real-time updates
+- 📱 RESTful API for frontend integration
+- 💾 SQLite database for data persistence
+- 🔍 Health monitoring endpoints
+- 🛠️ CLI management tools
+
+## Quick Start
+
+### Windows
+```bash
+start.bat
+```
+
+### Linux/Mac
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+The application will be available at: http://localhost:5000
+
+**Default login:** `admin` / `admin123`
 Shows a bar chart of vehicle counts using Chart.js.
 Lists historical data in a table.
 
