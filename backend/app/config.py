@@ -22,9 +22,9 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # JWT Configuration
-    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', os.urandom(32).hex())
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'traffic-system-jwt-secret-key-2025')
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(
-        days=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES_DAYS', 1))  # Reduced from 30 to 1 day
+        days=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES_DAYS', 30))  # Reduced from 30 to 1 day
     )
     JWT_TOKEN_LOCATION = ['cookies']
     JWT_ACCESS_COOKIE_PATH = '/'

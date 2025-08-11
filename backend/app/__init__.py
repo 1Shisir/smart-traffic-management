@@ -126,16 +126,18 @@ def create_app(config_name: Optional[str] = None) -> Tuple[Flask, SocketIO]:
             })
     
     @socketio.on('disconnect')
-    def handle_disconnect():
+    def handle_disconnect(reason=None):
         """Handle WebSocket disconnection."""
         try:
+            verify_jwt_in_request()
             user = get_jwt_identity()
             if user:
-                logger.info(f"User {user} disconnected from WebSocket")
+                logger.info(f"User {user} disconnected from WebSocket (reason: {reason})")
             else:
-                logger.info("Anonymous user disconnected from WebSocket")
+                logger.info(f"Anonymous user disconnected from WebSocket (reason: {reason})")
         except Exception:
-            logger.info("User disconnected from WebSocket")
+            # JWT verification might fail during disconnect, which is normal
+            logger.info(f"User disconnected from WebSocket (reason: {reason})")
     
     # Initialize database
     _initialize_database(app)

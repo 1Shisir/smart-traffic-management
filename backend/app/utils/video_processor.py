@@ -88,7 +88,7 @@ def start_video_processing(app, socketio_param, session, junction="main_junction
     
     stop_event.clear()
     processing_active = True
-    socketio = socketio_param
+    socketio = socketio_param  # Assign the socketio parameter to global variable
     
     # Start processing in a separate thread
     processing_thread = threading.Thread(
@@ -120,7 +120,10 @@ def is_processing_active():
 
 def process_video(session, junction="main_junction", video_path=None):
     """Process video and emit real-time updates via WebSocket with proper resource management."""
-    global frame_for_preview, processing_active
+    global frame_for_preview, processing_active, socketio
+    
+    # Debug: Check if socketio is available
+    logging.info(f"🔧 Starting video processing with SocketIO: {socketio is not None}")
     
     entries_buffer = []
     cap = None
@@ -242,6 +245,7 @@ def process_video(session, junction="main_junction", video_path=None):
 
                 # Real-time updates via SocketIO to all connected clients
                 if socketio:
+                    logging.info(f"📡 Emitting SocketIO update for frame {frame_count}")
                     socketio.emit('update', {
                         'junction': junction,
                         'count': total_count,
@@ -261,6 +265,9 @@ def process_video(session, junction="main_junction", video_path=None):
                         'state': light_state,
                         'duration': light_duration
                     })
+                    logging.info(f"📡 SocketIO events emitted successfully")
+                else:
+                    logging.warning(f"⚠️ No SocketIO instance available for frame {frame_count}")
 
             except Exception as frame_error:
                 logging.error(f"Frame processing error: {frame_error}")

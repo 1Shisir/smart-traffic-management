@@ -34,17 +34,18 @@ function App() {
     if (isAuthenticated && token) {
       loadInitialData();
     }
+    // Load chart data regardless of authentication (for public access)
+    loadChartData();
   }, [isAuthenticated, token]);
 
   const loadInitialData = async () => {
     try {
       console.log('📊 Loading initial traffic data...');
       
-      // First, try to get current status
+      // First, try to get current status (no auth required)
       const statusResponse = await fetch('http://localhost:5000/api/current-status', {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
       });
@@ -76,51 +77,35 @@ function App() {
         }
       }
       
-      // Load historical data
-      const historyResponse = await fetch('http://localhost:5000/api/data?limit=20', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (historyResponse.ok) {
-        const historyData = await historyResponse.json();
-        console.log('📊 History data loaded:', historyData.length, 'records');
-        
-        if (historyData.length > 0) {
-          setHistory(historyData);
-          
-          // If no current data was available, use the latest historical record
-          if (!statusResponse.ok) {
-            const latest = historyData[0];
-            setTrafficData(prev => ({
-              ...prev,
-              junction: latest.junction || 'Main St & 1st Ave',
-              time: latest.time || new Date().toLocaleTimeString(),
-              count: latest.total_count || 0,
-              car: latest.car_count || 0,
-              bus: latest.bus_count || 0,
-              truck: latest.truck_count || 0,
-              motorcycle: latest.motorcycle_count || 0,
-              traffic_light: latest.traffic_light || 'red',
-              light_duration: latest.light_duration || 30
-            }));
-          }
-        } else {
-          console.log('📊 No historical data found, generating sample data...');
-          await generateSampleData();
-        }
-      } else {
-        console.error('📊 Failed to load history data:', historyResponse.status);
-        // Try to generate sample data if no history exists
-        await generateSampleData();
-      }
+      // Load chart data from database (chart will be populated separately)
+      await loadChartData();
+      
     } catch (error) {
       console.error('📊 Error loading initial data:', error);
       // Try to generate sample data as fallback
       await generateSampleData();
+    }
+  };
+
+  const loadChartData = async () => {
+    try {
+      console.log('📊 Loading chart data from database...');
+      const response = await fetch('http://localhost:5000/api/data?limit=50', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const chartData = await response.json();
+        console.log('📊 Chart data loaded:', chartData.length, 'records from database');
+        setHistory(chartData);
+      } else {
+        console.error('📊 Failed to load chart data:', response.status);
+      }
+    } catch (error) {
+      console.error('📊 Error loading chart data:', error);
     }
   };
 
@@ -139,8 +124,8 @@ function App() {
       if (response.ok) {
         const result = await response.json();
         console.log('🎲 Sample data generated:', result.message);
-        // Reload data after generation
-        setTimeout(() => loadInitialData(), 1000);
+        // Reload chart data after generation
+        setTimeout(() => loadChartData(), 1000);
       } else {
         console.error('🎲 Failed to generate sample data');
       }
@@ -180,9 +165,27 @@ function App() {
 
         // Listen for real-time traffic data updates
         newSocket.on('update', (data) => {
-          console.log('Received real-time update:', data);
-          setTrafficData(data);
-          setHistory(prev => [data, ...prev.slice(0, 49)]); // Keep last 50 records
+          console.log('📡 Received real-time update:', data);
+          
+          // Map backend data structure to frontend structure
+          const mappedData = {
+            junction: data.junction || 'Main Junction',
+            time: data.time || new Date().toLocaleTimeString(),
+            count: data.count || 0,
+            car: data.car || 0,
+            bus: data.bus || 0,
+            truck: data.truck || 0,
+            motorcycle: data.motorcycle || 0,
+            traffic_light: data.traffic_light || 'red',
+            light_duration: data.light_duration || 30,
+            // Keep additional backend fields for debugging
+            timestamp: data.timestamp,
+            frame_count: data.frame_count,
+            total_frames: data.total_frames
+          };
+          
+          console.log('📊 Mapped traffic data:', mappedData);
+          setTrafficData(mappedData);
         });
 
         // Listen for traffic light state changes
@@ -238,6 +241,27 @@ function App() {
       setSocket(null);
     }
   }, [isAuthenticated, socket]);
+
+  // Periodic chart data refresh from database
+  useEffect(() => {
+    if (!isAuthenticated || !token) return;
+
+    // Initial load of chart data
+    loadChartData();
+
+    // Set up periodic refresh - more frequent when processing is active
+    const refreshInterval = isProcessing ? 30000 : 120000; // 30s when processing, 2min when idle
+    
+    console.log(`📊 Setting up chart data refresh every ${refreshInterval/1000} seconds`);
+    const intervalId = setInterval(() => {
+      loadChartData();
+    }, refreshInterval);
+
+    return () => {
+      console.log('📊 Clearing chart data refresh interval');
+      clearInterval(intervalId);
+    };
+  }, [isAuthenticated, token, isProcessing]);
 
   const startProcessing = () => {
     if (socket) {
@@ -325,6 +349,7 @@ function App() {
       isProcessing={isProcessing}
       onStartProcessing={startProcessing}
       onStopProcessing={stopProcessing}
+      onRefreshChart={loadChartData}
       onLogout={authLogout}
     />
   );

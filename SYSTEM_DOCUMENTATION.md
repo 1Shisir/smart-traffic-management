@@ -328,15 +328,6 @@ smart-traffic-system/
 - **Caching**: Redis caching for improved response times
 - **CDN Integration**: Static asset delivery optimization
 
----
-
-## 📞 Support & Contact
-
-For technical support, bug reports, or feature requests:
-- **GitHub Repository**: https://github.com/1Shisir/smart-traffic-management
-- **Documentation**: Check README.md files in respective directories
-- **Issues**: Create GitHub issues for bug reports
-- **Contributions**: Pull requests welcome
 
 ---
 

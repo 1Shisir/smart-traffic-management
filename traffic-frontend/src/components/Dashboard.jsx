@@ -1,16 +1,23 @@
 import React, { useState } from 'react';
 import TrafficLight from './TrafficLight.jsx';
 import VideoPreview from './VideoPreview.jsx';
-import HistoryTable from './HistoryTable.jsx';
+import TrafficChart from './TrafficChart.jsx';
+import ChartControls from './ChartControls.jsx';
 import { FaCar, FaBus, FaTruck, FaMotorcycle, FaEye, FaClock } from 'react-icons/fa';
 
-const Dashboard = ({ data, history, isProcessing, onStartProcessing, onStopProcessing, onLogout }) => {
-  // Debug log to track isProcessing prop changes
+const Dashboard = ({ data, history, isProcessing, onStartProcessing, onStopProcessing, onRefreshChart, onLogout }) => {
+  // Debug log to track data changes
+  console.log('📊 Dashboard received data:', data);
+  console.log('📊 Dashboard received history:', history?.length, 'records');
   console.log('📊 Dashboard received isProcessing prop:', isProcessing);
   
   // Local state to prevent double-clicks
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  
+  // Chart settings state
+  const [chartType, setChartType] = useState('bar'); // 'bar' or 'line'
+  const [viewMode, setViewMode] = useState('breakdown'); // 'total' or 'breakdown'
   
   const handleStartClick = async () => {
     if (isStarting || isProcessing) {
@@ -212,10 +219,21 @@ const Dashboard = ({ data, history, isProcessing, onStartProcessing, onStopProce
           </div>
         </div>
 
-        {/* Historical Data */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h2 className="text-lg font-semibold mb-4 text-gray-800">Historical Data</h2>
-          <HistoryTable history={history} />
+        {/* Traffic Analytics Chart */}
+        <div className="mb-8">
+          <ChartControls 
+            chartType={chartType}
+            viewMode={viewMode}
+            onChartTypeChange={setChartType}
+            onViewModeChange={setViewMode}
+            onRefresh={onRefreshChart}
+          />
+          
+          <TrafficChart 
+            data={history}
+            chartType={chartType}
+            showVehicleTypes={viewMode === 'breakdown'}
+          />
         </div>
       </main>
     </div>

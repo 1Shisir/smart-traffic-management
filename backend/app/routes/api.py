@@ -1,14 +1,11 @@
 # Standard library imports
-import io
 import logging
 import os
 import threading
 from datetime import datetime
-from typing import Optional, Dict, Any
 
 # Third-party imports
-import cv2
-from flask import Blueprint, render_template, jsonify, send_file, request, make_response, redirect, url_for, current_app
+from flask import Blueprint, jsonify, send_file, request, make_response, redirect, url_for
 from flask_jwt_extended import jwt_required, create_access_token, unset_jwt_cookies, set_access_cookies, get_jwt_identity, verify_jwt_in_request
 from sqlalchemy import desc
 
@@ -26,17 +23,9 @@ api = Blueprint('api', __name__)
 # Configure logging
 logger = logging.getLogger(__name__)
 
-@api.route('/dashboard')
-@jwt_required()
-def dashboard():
-    # username = get_jwt_identity()
-    return render_template('dashboard.html')
-
-@api.route('/login', methods=['GET', 'POST'])
+@api.route('/login', methods=['POST'])
 def login():
-    if request.method == 'GET':
-        return render_template('login.html')
-    
+    """API endpoint for user authentication."""
     # Enhanced input validation and sanitization
     try:
         data = request.get_json()
@@ -85,18 +74,12 @@ def logout():
     return response
 
 @api.route('/data')
-@jwt_required()
 def get_data():
-    """Get recent traffic data for dashboard with enhanced security."""
+    """Get recent traffic data for dashboard."""
     try:
         # Enhanced input validation with strict limits
         limit = request.args.get('limit', 10, type=int)
         limit = max(1, min(limit, 100))  # Enforce strict limits: 1-100 records
-        
-        # Validate user authorization
-        user_identity = get_jwt_identity()
-        if not user_identity:
-            return jsonify({'error': 'Invalid authentication'}), 401
         
         session = Session()
         try:
@@ -140,7 +123,6 @@ def get_data():
         return jsonify({'error': 'Failed to fetch traffic data'}), 500
 
 @api.route('/current-status')
-@jwt_required()
 def get_current_status():
     """Get current traffic status and system state."""
     try:
@@ -282,134 +264,9 @@ def generate_sample_data():
         logger.error(f"Error generating sample data: {e}")
         return jsonify({'error': 'Failed to generate sample data'}), 500
 
-@api.route('/video-feed', methods=['GET'])
-@jwt_required()
-def video_feed():
-    """Get current video frame."""
-    try:
-        import cv2
-        import numpy as np
-        from flask import Response
-        import io
-        
-        # For demo purposes, create a simple test frame
-        # In a real implementation, this would come from your video processor
-        frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        
-        # Add some demo content
-        cv2.putText(frame, 'LIVE VIDEO FEED', (150, 200), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        cv2.putText(frame, f'Time: {datetime.now().strftime("%H:%M:%S")}', 
-                   (200, 250), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(frame, 'Monitoring Traffic...', (180, 300), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
-        
-        # Convert frame to bytes
-        _, buffer = cv2.imencode('.jpg', frame)
-        frame_bytes = buffer.tobytes()
-        
-        return Response(frame_bytes, mimetype='image/jpeg')
-        
-    except ImportError:
-        # If OpenCV is not available, return a placeholder
-        try:
-            from PIL import Image, ImageDraw, ImageFont
-            import io
-            
-            # Create a simple placeholder image
-            img = Image.new('RGB', (640, 480), color='black')
-            draw = ImageDraw.Draw(img)
-            
-            # Add text
-            draw.text((200, 200), "LIVE VIDEO FEED", fill='green')
-            draw.text((220, 230), f"Time: {datetime.now().strftime('%H:%M:%S')}", fill='white')
-            draw.text((200, 260), "OpenCV not installed", fill='yellow')
-            draw.text((180, 290), "Install cv2 for real video", fill='red')
-            
-            # Convert to bytes
-            img_byte_arr = io.BytesIO()
-            img.save(img_byte_arr, format='JPEG')
-            img_byte_arr.seek(0)
-            
-            return Response(img_byte_arr.getvalue(), mimetype='image/jpeg')
-        except ImportError:
-            # Neither OpenCV nor PIL available
-            return jsonify({'error': 'Video feed requires OpenCV or PIL installation'}), 503
-        
-    except Exception as e:
-        logger.error(f"Error in video feed: {e}")
-        return jsonify({'error': 'Video feed not available'}), 500
-
-@api.route('/traffic-data')
-@jwt_required()
-def traffic_data():
-    try:
-        page = request.args.get('page', 1, type=int)
-        per_page = min(request.args.get('per_page', 10, type=int), 100)
-        
-        data_result = TrafficDataService.get_traffic_data(page, per_page)
-        
-        return jsonify({
-            'data': data_result.get('data', []),
-            'total': data_result.get('total', 0),
-            'page': page,
-            'per_page': per_page,
-            'pages': data_result.get('pages', 0)
-        })
-    except Exception as e:
-        logger.error(f"Error fetching traffic data: {e}")
-        return jsonify({'error': 'Failed to fetch traffic data'}), 500
-
-@api.route('/traffic-summary')
-@jwt_required()
-def traffic_summary():
-    try:
-        summary = TrafficDataService.get_traffic_summary()
-        return jsonify(summary)
-    except Exception as e:
-        logger.error(f"Error fetching traffic summary: {e}")
-        return jsonify({'error': 'Failed to fetch traffic summary'}), 500
-
-@api.route('/recent-traffic')
-@jwt_required()
-def recent_traffic():
-    try:
-        limit = request.args.get('limit', 10, type=int)
-        recent_data = TrafficDataService.get_recent_data(limit)
-        return jsonify([item.to_dict() for item in recent_data])
-    except Exception as e:
-        logger.error(f"Error fetching recent traffic data: {e}")
-        return jsonify({'error': 'Failed to fetch recent traffic data'}), 500
-
-@api.route('/video-preview')
-@jwt_required()
-def video_preview():
-    """Serve the current processed frame as an image."""
-    try:
-        from app.utils.video_processor import frame_for_preview
-        
-        if frame_for_preview is None:
-            # Return a default image or empty response
-            return jsonify({'error': 'No video frame available'}), 404
-        
-        # Convert frame to JPEG
-        _, buffer = cv2.imencode('.jpg', frame_for_preview)
-        io_buf = io.BytesIO(buffer)
-        
-        return send_file(
-            io_buf,
-            mimetype='image/jpeg',
-            as_attachment=False,
-            download_name='preview.jpg'
-        )
-    except Exception as e:
-        logger.error(f"Error serving video preview: {e}")
-        return jsonify({'error': 'Failed to generate preview'}), 500
-
 @api.route('/video-stream')
-@jwt_required()
 def video_stream():
-    """Serve video stream."""
+    """Serve video stream without authentication for public access."""
     try:
         video_path = Config.VIDEO_PATH
         if not os.path.exists(video_path):
@@ -484,8 +341,8 @@ def register_socketio_handlers(socketio):
             logging.info(f"Starting video processing for junction: {junction}")
             session = Session()
             
-            # Start processing
-            success = start_video_processing(None, None, session, junction, video_path)
+            # Start processing with socketio instance
+            success = start_video_processing(None, socketio, session, junction, video_path)
             
             if success:
                 socketio.emit('processing_started', {
@@ -628,6 +485,15 @@ def register_socketio_handlers(socketio):
             logger.error(f"WebSocket connection error: {e}")
 
     @socketio.on('disconnect')
-    def handle_disconnect():
+    def handle_disconnect(reason=None):
         """Handle WebSocket disconnection."""
-        logger.info("User disconnected from WebSocket")
+        try:
+            verify_jwt_in_request()
+            user = get_jwt_identity()
+            if user:
+                logger.info(f"User {user} disconnected from WebSocket (reason: {reason})")
+            else:
+                logger.info(f"Anonymous user disconnected from WebSocket (reason: {reason})")
+        except Exception:
+            # JWT verification might fail during disconnect, which is normal
+            logger.info(f"User disconnected from WebSocket (reason: {reason})")
