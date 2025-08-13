@@ -101,10 +101,19 @@ def create_app(config_name: Optional[str] = None) -> Tuple[Flask, SocketIO]:
     def handle_connect(auth):
         """Handle WebSocket connection with JWT verification."""
         try:
-            # Try to verify JWT from cookies
-            verify_jwt_in_request()
-            user = get_jwt_identity()
-            logger.info(f"User {user} connected via WebSocket")
+            # Check if token is provided in auth object
+            if auth and 'token' in auth:
+                # Verify the token manually
+                from flask_jwt_extended import decode_token
+                token = auth['token']
+                decoded_token = decode_token(token)
+                user = decoded_token['sub']  # Subject contains the user identity
+                logger.info(f"User {user} connected via WebSocket with token")
+            else:
+                # Try to verify JWT from cookies/headers
+                verify_jwt_in_request()
+                user = get_jwt_identity()
+                logger.info(f"User {user} connected via WebSocket")
             
             # Join user to a room for targeted messaging
             from flask_socketio import join_room

@@ -78,7 +78,7 @@ def get_traffic_light_state(total_count):
     else:
         return "green", 30
 
-def start_video_processing(app, socketio_param, session, junction="main_junction", video_path=None):
+def start_video_processing(app, socketio_param, session, junction="main_junction", video_path=None, user_room=None):
     """Start video processing in a separate thread."""
     global processing_active, processing_thread, stop_event, socketio
     
@@ -93,7 +93,7 @@ def start_video_processing(app, socketio_param, session, junction="main_junction
     # Start processing in a separate thread
     processing_thread = threading.Thread(
         target=process_video,
-        args=(session, junction, video_path),
+        args=(session, junction, video_path, user_room),
         daemon=True
     )
     processing_thread.start()
@@ -118,7 +118,7 @@ def is_processing_active():
     """Check if video processing is currently active."""
     return processing_active
 
-def process_video(session, junction="main_junction", video_path=None):
+def process_video(session, junction="main_junction", video_path=None, user_room=None):
     """Process video and emit real-time updates via WebSocket with proper resource management."""
     global frame_for_preview, processing_active, socketio
     
@@ -243,10 +243,11 @@ def process_video(session, junction="main_junction", video_path=None):
                         session.rollback()
                         entries_buffer = []  # Clear buffer to prevent memory buildup
 
-                # Real-time updates via SocketIO to all connected clients
+                # Real-time updates via SocketIO to user room
                 if socketio:
                     logging.info(f"📡 Emitting SocketIO update for frame {frame_count}")
-                    socketio.emit('update', {
+                    
+                    update_data = {
                         'junction': junction,
                         'count': total_count,
                         'car': class_counts['car'],
@@ -259,13 +260,33 @@ def process_video(session, junction="main_junction", video_path=None):
                         'time': timestamp.strftime("%H:%M:%S"),
                         'frame_count': frame_count,
                         'total_frames': total_frames
-                    })
-
-                    socketio.emit('traffic_light', {
+                    }
+                    
+                    traffic_light_data = {
                         'state': light_state,
                         'duration': light_duration
-                    })
-                    logging.info(f"📡 SocketIO events emitted successfully")
+                    }
+                    
+                    if user_room:
+                        # Send to specific user room
+                        logging.info(f"📡 About to emit 'update' to room: {user_room}")
+                        logging.info(f"📡 Update data: {update_data}")
+                        socketio.emit('update', update_data, room=user_room)
+                        
+                        logging.info(f"📡 About to emit 'traffic_light' to room: {user_room}")
+                        logging.info(f"📡 Traffic light data: {traffic_light_data}")
+                        socketio.emit('traffic_light', traffic_light_data, room=user_room)
+                        
+                        logging.info(f"📡 ✅ SocketIO events successfully emitted to room {user_room}")
+                    else:
+                        # Fallback to broadcast (for backward compatibility)
+                        logging.info(f"📡 About to broadcast 'update' to all clients")
+                        socketio.emit('update', update_data)
+                        
+                        logging.info(f"📡 About to broadcast 'traffic_light' to all clients")
+                        socketio.emit('traffic_light', traffic_light_data)
+                        
+                        logging.info(f"📡 ✅ SocketIO events broadcasted to all clients")
                 else:
                     logging.warning(f"⚠️ No SocketIO instance available for frame {frame_count}")
 
@@ -312,11 +333,8 @@ def process_video(session, junction="main_junction", video_path=None):
         # Clean up global frame
         frame_for_preview = None
         
-        if socketio:
-            socketio.emit('processing_stopped', {
-                'message': f'Video processing stopped for {junction}',
-                'junction': junction
-            })
+        # Note: processing_stopped event will be emitted by the API handler
+        # that has access to the user room information
         
         logging.info(f"Video processing cleanup completed for {junction}")
 

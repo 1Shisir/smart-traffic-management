@@ -7,6 +7,7 @@ from datetime import datetime
 # Third-party imports
 from flask import Blueprint, jsonify, send_file, request, make_response, redirect, url_for
 from flask_jwt_extended import jwt_required, create_access_token, unset_jwt_cookies, set_access_cookies, get_jwt_identity, verify_jwt_in_request
+from flask_socketio import join_room, leave_room, emit
 from sqlalchemy import desc
 
 # Local imports
@@ -284,7 +285,177 @@ def video_stream():
 
 
 def register_socketio_handlers(socketio):
-    """Register SocketIO event handlers"""
+    """Register SocketIO event handlers with user room management"""
+    
+    # Store active user sessions
+    user_sessions = {}  # {user_id: {'socket_id': id, 'room': room_name, 'processing': bool}}
+    
+    @socketio.on('connect')
+    def handle_connect(auth):
+        """Handle WebSocket connection with JWT authentication."""
+        try:
+            # Authenticate on every connection
+            if not auth or 'token' not in auth:
+                logger.error("WebSocket connection rejected: No token provided")
+                return False
+            
+            token = auth['token']
+            
+            # Verify JWT token manually
+            from flask_jwt_extended import decode_token
+            try:
+                decoded_token = decode_token(token)
+                user_id = decoded_token['sub']
+                logger.info(f"User {user_id} authenticated via WebSocket")
+            except Exception as e:
+                logger.error(f"WebSocket JWT verification failed: {e}")
+                return False
+            
+            # Create user-specific room
+            user_room = f"user_{user_id}"
+            join_room(user_room)
+            
+            logger.info(f"🏠 ========== ROOM JOINED ==========")
+            logger.info(f"🏠 User ID: {user_id}")
+            logger.info(f"🏠 Room name: {user_room}")
+            logger.info(f"🏠 Socket ID: {request.sid}")
+            logger.info(f"🏠 =================================")
+            
+            # Store session info
+            user_sessions[user_id] = {
+                'socket_id': request.sid,
+                'room': user_room,
+                'processing': user_sessions.get(user_id, {}).get('processing', False)  # Preserve processing state
+            }
+            
+            logger.info(f"User {user_id} joined room {user_room} with socket {request.sid}")
+            
+            # If user was processing, notify about reconnection
+            if user_sessions[user_id]['processing']:
+                emit('processing_reconnected', {
+                    'message': 'Reconnected to active processing session',
+                    'processing_active': True
+                }, room=user_room)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"WebSocket connection error: {e}")
+            return False
+
+    @socketio.on('disconnect')
+    def handle_disconnect():
+        """Handle WebSocket disconnection."""
+        # Don't remove user session immediately - they might reconnect
+        logger.info(f"Socket {request.sid} disconnected")
+        # Session cleanup will happen on new connection or timeout
+
+    @socketio.on('test_connection')
+    def handle_test_connection(data):
+        """Handle test connection from frontend with room support."""
+        try:
+            # Extract JWT token to identify user room
+            from flask_jwt_extended import decode_token
+            
+            # Try to get token from multiple sources
+            token = None
+            
+            # 1. Try from data payload (sent by frontend)
+            if data and 'token' in data:
+                token = data['token']
+                logger.info(f"🧪 TEST: Token found in data payload")
+            
+            # 2. Try from auth data (connection auth)
+            if not token:
+                auth_data = getattr(request, 'event', {}).get('auth', {})
+                token = auth_data.get('token') if auth_data else None
+                if token:
+                    logger.info(f"🧪 TEST: Token found in auth data")
+            
+            # 3. Try to find user session by socket ID
+            if not token:
+                for user_id, session_info in user_sessions.items():
+                    if session_info.get('socket_id') == request.sid:
+                        token = 'found_via_session'  # We know the user from session
+                        user_room = f"user_{user_id}"
+                        logger.info(f"🧪 TEST: User {user_id} found via session, room {user_room}")
+                        emit('test_response', {
+                            'message': 'Room-based test successful (session)',
+                            'user_id': user_id,
+                            'user_room': user_room,
+                            'received_data': data,
+                            'timestamp': datetime.now().isoformat()
+                        }, room=user_room)
+                        return
+            
+            if token and token != 'found_via_session':
+                decoded_token = decode_token(token)
+                user_id = decoded_token['sub']
+                user_room = f"user_{user_id}"
+                
+                logger.info(f"🧪 TEST: User {user_id} testing room {user_room}")
+                emit('test_response', {
+                    'message': 'Room-based test successful',
+                    'user_id': user_id,
+                    'user_room': user_room,
+                    'received_data': data,
+                    'timestamp': datetime.now().isoformat()
+                }, room=user_room)
+            else:
+                logger.info(f"🧪 TEST: Anonymous test connection - no token found")
+                emit('test_response', {
+                    'message': 'Test response (no auth)',
+                    'timestamp': datetime.now().isoformat()
+                })
+        except Exception as e:
+            logger.error(f"Test connection error: {e}")
+            emit('test_response', {
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            })
+    
+    @socketio.on('join_room')
+    def handle_join_room(data):
+        """Handle manual room join request."""
+        try:
+            token = data.get('token') if data else None
+            requested_room = data.get('room') if data else None
+            
+            if token:
+                from flask_jwt_extended import decode_token
+                decoded_token = decode_token(token)
+                user_id = decoded_token['sub']
+                user_room = f"user_{user_id}"
+                
+                # Join the room
+                join_room(user_room)
+                
+                logger.info(f"🏠 MANUAL JOIN: User {user_id} manually joined room {user_room}")
+                logger.info(f"🏠 MANUAL JOIN: Socket ID {request.sid}")
+                
+                # Update session
+                user_sessions[user_id] = {
+                    'socket_id': request.sid,
+                    'room': user_room,
+                    'processing': user_sessions.get(user_id, {}).get('processing', False)
+                }
+                
+                emit('room_joined', {
+                    'message': f'Successfully joined room {user_room}',
+                    'room': user_room,
+                    'user_id': user_id
+                })
+                
+            else:
+                emit('room_join_error', {
+                    'message': 'Token required for room join'
+                })
+                
+        except Exception as e:
+            logger.error(f"Manual room join error: {e}")
+            emit('room_join_error', {
+                'message': f'Failed to join room: {str(e)}'
+            })
     
     @socketio.on('start_processing')
     def handle_start_processing(data):
@@ -293,69 +464,71 @@ def register_socketio_handlers(socketio):
             # Extract token from data for WebSocket authentication
             token = data.get('token') if data else None
             if not token:
-                socketio.emit('processing_error', {
-                    'message': 'Authentication token required'
-                })
+                emit('processing_error', {'message': 'Authentication token required'})
                 return
                 
-            # Manually verify the JWT token
+            # Manually verify the JWT token and get user room
             try:
                 from flask_jwt_extended import decode_token
                 decoded_token = decode_token(token)
-                user = decoded_token['sub']  # 'sub' contains the identity
-                logger.info(f"User {user} requested to start video processing")
+                user_id = decoded_token['sub']
+                user_room = f"user_{user_id}"
+                logger.info(f"User {user_id} requested to start video processing")
             except Exception as e:
                 logger.error(f"Token verification failed: {e}")
-                socketio.emit('processing_error', {
-                    'message': 'Invalid authentication token'
-                })
+                emit('processing_error', {'message': 'Invalid authentication token'})
                 return
             
             junction = data.get('junction', 'junction1') if data else 'junction1'
             
             # Check if processing is already active
             if is_processing_active():
-                socketio.emit('processing_error', {
+                emit('processing_error', {
                     'message': 'Video processing is already active',
-                    'user': user
-                })
+                    'user': user_id
+                }, room=user_room)
                 return
                 
             # Validate junction exists in config
             if hasattr(Config, 'JUNCTIONS') and junction not in Config.JUNCTIONS:
-                socketio.emit('processing_error', {
+                emit('processing_error', {
                     'message': f'Unknown junction: {junction}',
-                    'user': user
-                })
+                    'user': user_id
+                }, room=user_room)
                 return
                 
             video_path = getattr(Config, 'JUNCTIONS', {}).get(junction, Config.VIDEO_PATH)
             
             if not os.path.exists(video_path):
-                socketio.emit('processing_error', {
+                emit('processing_error', {
                     'message': f'Video file not found for junction: {junction}',
-                    'user': user
-                })
+                    'user': user_id
+                }, room=user_room)
                 return
                 
             logging.info(f"Starting video processing for junction: {junction}")
             session = Session()
             
             # Start processing with socketio instance
-            success = start_video_processing(None, socketio, session, junction, video_path)
+            # Update user session to mark as processing
+            if user_id in user_sessions:
+                user_sessions[user_id]['processing'] = True
+            
+            # Start processing with socketio instance and user room
+            success = start_video_processing(None, socketio, session, junction, video_path, user_room)
             
             if success:
-                socketio.emit('processing_started', {
+                emit('processing_started', {
                     'message': f'Video processing started for {junction}',
                     'junction': junction,
-                    'user': user,
+                    'user': user_id,
                     'timestamp': datetime.now().isoformat()
-                })
+                }, room=user_room)
             else:
-                socketio.emit('processing_error', {
+                emit('processing_error', {
                     'message': 'Failed to start video processing',
-                    'user': user
-                })
+                    'user': user_id
+                }, room=user_room)
             
         except Exception as e:
             logging.error(f"Error starting video processing: {e}")
@@ -398,41 +571,100 @@ def register_socketio_handlers(socketio):
             success = stop_video_processing()
             
             if success:
+                # Create user-specific room to emit to
+                user_room = f"user_{user}"
+                logger.info(f"🛑 Emitting processing_stopped to room: {user_room}")
+                
                 socketio.emit('processing_stopped', {
-                    'message': 'Video processing stopped successfully',
+                    'message': f'Video processing stopped for {user}',
                     'user': user,
                     'timestamp': datetime.now().isoformat()
-                })
+                }, room=user_room)
+                
+                logger.info(f"🛑 Successfully emitted processing_stopped to {user_room}")
             else:
+                # Create user-specific room for error too
+                user_room = f"user_{user}"
                 socketio.emit('processing_error', {
                     'message': 'Failed to stop video processing',
                     'user': user
-                })
+                }, room=user_room)
                 
         except Exception as e:
             logging.error(f"Error stopping video processing: {e}")
-            socketio.emit('processing_error', {
-                'message': f'Failed to stop video processing: {str(e)}'
-            })
+            # Try to extract user info for room-based error emission
+            try:
+                token = data.get('token') if data else None
+                if token:
+                    from flask_jwt_extended import decode_token
+                    decoded_token = decode_token(token)
+                    user = decoded_token['sub']
+                    user_room = f"user_{user}"
+                    socketio.emit('processing_error', {
+                        'message': f'Failed to stop video processing: {str(e)}'
+                    }, room=user_room)
+                else:
+                    # No token, broadcast to all
+                    socketio.emit('processing_error', {
+                        'message': f'Failed to stop video processing: {str(e)}'
+                    })
+            except:
+                # Fallback: broadcast to all
+                socketio.emit('processing_error', {
+                    'message': f'Failed to stop video processing: {str(e)}'
+                })
 
     @socketio.on('get_processing_status')
     def handle_get_processing_status(data=None):
         """Get current processing status."""
         try:
-            # Verify user authentication
-            verify_jwt_in_request()
-            user = get_jwt_identity()
+            # Extract token from data for WebSocket authentication
+            token = data.get('token') if data else None
+            user_id = None
+            user_room = None
             
-            socketio.emit('processing_status', {
-                'active': is_processing_active(),
-                'user': user,
+            if token:
+                try:
+                    from flask_jwt_extended import decode_token
+                    decoded_token = decode_token(token)
+                    user_id = decoded_token['sub']
+                    user_room = f"user_{user_id}"
+                    logger.info(f"📊 STATUS: User {user_id} requesting processing status")
+                except Exception as e:
+                    logger.error(f"Token verification failed in status check: {e}")
+            
+            # Check if user can be found via session
+            if not user_id:
+                for uid, session_info in user_sessions.items():
+                    if session_info.get('socket_id') == request.sid:
+                        user_id = uid
+                        user_room = f"user_{user_id}"
+                        logger.info(f"📊 STATUS: User {user_id} found via session")
+                        break
+            
+            processing_active = is_processing_active()
+            
+            response_data = {
+                'processing_active': processing_active,
+                'user': user_id,
                 'timestamp': datetime.now().isoformat()
-            })
+            }
+            
+            if user_room:
+                # Send to specific user room
+                emit('processing_status', response_data, room=user_room)
+                logger.info(f"📊 STATUS: Sent to room {user_room}, processing={processing_active}")
+            else:
+                # Send to current socket
+                emit('processing_status', response_data)
+                logger.info(f"📊 STATUS: Sent to socket, processing={processing_active}")
             
         except Exception as e:
-            logging.error(f"Error getting processing status: {e}")
-            socketio.emit('auth_required', {
-                'message': 'Authentication required to get status'
+            logger.error(f"Error getting processing status: {e}")
+            emit('processing_status', {
+                'processing_active': False,
+                'error': 'Failed to get status',
+                'timestamp': datetime.now().isoformat()
             })
 
     @socketio.on('stop_server')

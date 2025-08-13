@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const TrafficLight = ({ state, duration, vehicleCount = 0 }) => {
+const TrafficLight = ({ state, duration, vehicleCount = 0, isProcessing = false }) => {
   const [timeLeft, setTimeLeft] = useState(duration || 0);
   const [isBlinking, setIsBlinking] = useState(false);
 
@@ -9,17 +9,17 @@ const TrafficLight = ({ state, duration, vehicleCount = 0 }) => {
   }, [duration]);
 
   useEffect(() => {
-    if (timeLeft > 0) {
+    if (timeLeft > 0 && isProcessing) {
       const timer = setTimeout(() => {
         setTimeLeft(timeLeft - 1);
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [timeLeft]);
+  }, [timeLeft, isProcessing]);
 
   useEffect(() => {
-    // Blink when time is almost up (last 3 seconds)
-    if (timeLeft <= 3 && timeLeft > 0) {
+    // Blink when time is almost up (last 3 seconds) and processing is active
+    if (timeLeft <= 3 && timeLeft > 0 && isProcessing) {
       setIsBlinking(true);
       const blinkTimer = setInterval(() => {
         setIsBlinking(prev => !prev);
@@ -28,9 +28,14 @@ const TrafficLight = ({ state, duration, vehicleCount = 0 }) => {
     } else {
       setIsBlinking(false);
     }
-  }, [timeLeft]);
+  }, [timeLeft, isProcessing]);
 
   const getLightColor = (lightType) => {
+    // If not processing, show inactive state
+    if (!isProcessing) {
+      return getLightInactiveColor(lightType);
+    }
+    
     const currentState = state?.toLowerCase() || 'red';
     
     if (lightType === currentState) {
@@ -61,6 +66,11 @@ const TrafficLight = ({ state, duration, vehicleCount = 0 }) => {
   };
 
   const getTrafficStatus = () => {
+    // If not processing, show standby status
+    if (!isProcessing) {
+      return { text: 'STANDBY', color: 'text-gray-500', icon: '⏸️' };
+    }
+    
     const currentState = state?.toLowerCase() || 'red';
     switch (currentState) {
       case 'red': return { text: 'STOP', color: 'text-red-500', icon: '🛑' };
@@ -105,7 +115,7 @@ const TrafficLight = ({ state, duration, vehicleCount = 0 }) => {
             {status.icon} {status.text}
           </div>
           
-          {timeLeft > 0 && (
+          {isProcessing && timeLeft > 0 && (
             <div className="bg-gray-100 rounded-lg p-3 min-w-[120px]">
               <div className="text-sm text-gray-600 mb-1">Time Remaining</div>
               <div className={`text-2xl font-mono font-bold ${timeLeft <= 3 ? 'text-red-500' : 'text-gray-800'}`}>
@@ -113,42 +123,81 @@ const TrafficLight = ({ state, duration, vehicleCount = 0 }) => {
               </div>
             </div>
           )}
+          
+          {!isProcessing && (
+            <div className="bg-gray-100 rounded-lg p-3 min-w-[120px]">
+              <div className="text-sm text-gray-600 mb-1">Status</div>
+              <div className="text-lg font-bold text-gray-600">
+                Waiting to Start
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Vehicle Count Display */}
-        <div className="bg-blue-50 rounded-lg p-4 w-full">
-          <div className="text-center">
-            <div className="text-sm text-gray-600 mb-1">Vehicles Detected</div>
-            <div className="text-3xl font-bold text-blue-600">
-              🚗 {vehicleCount}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              {vehicleCount === 0 ? 'No traffic' : 
-               vehicleCount < 5 ? 'Light traffic' :
-               vehicleCount < 10 ? 'Moderate traffic' : 'Heavy traffic'}
+        {/* Vehicle Count Display - Only show when processing */}
+        {isProcessing ? (
+          <div className="bg-blue-50 rounded-lg p-4 w-full">
+            <div className="text-center">
+              <div className="text-sm text-gray-600 mb-1">Vehicles Detected</div>
+              <div className="text-3xl font-bold text-blue-600">
+                🚗 {vehicleCount}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                {vehicleCount === 0 ? 'No traffic' : 
+                 vehicleCount < 5 ? 'Light traffic' :
+                 vehicleCount < 10 ? 'Moderate traffic' : 'Heavy traffic'}
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="bg-gray-50 rounded-lg p-4 w-full">
+            <div className="text-center">
+              <div className="text-sm text-gray-600 mb-1">Vehicle Detection</div>
+              <div className="text-2xl font-bold text-gray-400">
+                ⏸️ Not Active
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                Start processing to detect vehicles
+              </div>
+            </div>
+          </div>
+        )}
 
-        {/* Traffic Flow Indicator */}
-        <div className="w-full bg-gray-200 rounded-lg p-3">
-          <div className="flex justify-between items-center">
-            <span className="text-sm font-medium text-gray-700">Traffic Flow</span>
-            <div className="flex space-x-1">
-              {[...Array(5)].map((_, i) => (
-                <div
-                  key={i}
-                  className={`w-2 h-6 rounded ${
-                    i < Math.min(5, Math.ceil(vehicleCount / 3)) 
-                      ? vehicleCount < 5 ? 'bg-green-400' :
-                        vehicleCount < 10 ? 'bg-yellow-400' : 'bg-red-400'
-                      : 'bg-gray-300'
-                  }`}
-                ></div>
-              ))}
+        {/* Traffic Flow Indicator - Only show when processing */}
+        {isProcessing ? (
+          <div className="w-full bg-gray-200 rounded-lg p-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-gray-700">Traffic Flow</span>
+              <div className="flex space-x-1">
+                {[...Array(5)].map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-2 h-6 rounded ${
+                      i < Math.min(5, Math.ceil(vehicleCount / 3)) 
+                        ? vehicleCount < 5 ? 'bg-green-400' :
+                          vehicleCount < 10 ? 'bg-yellow-400' : 'bg-red-400'
+                        : 'bg-gray-300'
+                    }`}
+                  ></div>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="w-full bg-gray-200 rounded-lg p-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-gray-700">Traffic Flow</span>
+              <div className="flex space-x-1">
+                {[...Array(5)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-2 h-6 rounded bg-gray-300"
+                  ></div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

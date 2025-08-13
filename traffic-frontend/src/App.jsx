@@ -136,7 +136,16 @@ function App() {
 
   // Initialize socket connection after authentication
   useEffect(() => {
-    if (isAuthenticated && token && !socket) {
+    console.log('🔌 ========== SOCKET INITIALIZATION EFFECT ==========');
+    console.log('🔌 isAuthenticated:', isAuthenticated);
+    console.log('🔌 isLoading:', isLoading);
+    console.log('🔌 token available:', !!token);
+    console.log('🔌 socket exists:', !!socket);
+    console.log('🔌 Condition check:', isAuthenticated, '&&', !isLoading, '&&', !!token, '&&', !socket);
+    console.log('🔌 Should initialize?', isAuthenticated && !isLoading && token && !socket);
+    
+    if (isAuthenticated && !isLoading && token && !socket) {
+      console.log('🔌 ✅ All conditions met - initializing socket connection...');
       console.log('🔌 Initializing socket connection with authenticated token...');
       const newSocket = io('http://localhost:5000', {
         auth: { token },
@@ -231,7 +240,7 @@ function App() {
 
         setSocket(newSocket);
     }
-  }, [isAuthenticated, token, socket]);
+  }, [isAuthenticated, token, socket, isLoading]);
 
   // Ensure socket is disconnected when not authenticated
   useEffect(() => {
@@ -269,6 +278,11 @@ function App() {
         console.log('🚀 Starting video processing...');
         console.log('Current isProcessing state before start:', isProcessing);
         socket.emit('start_processing', { token });
+        
+        // Optimistically update state immediately for better UX
+        console.log('🚀 Optimistically setting isProcessing to true for immediate UI update');
+        setIsProcessing(true);
+        
         return true;
       } else {
         console.error('No token available for start_processing');
