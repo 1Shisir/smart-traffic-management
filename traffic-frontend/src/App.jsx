@@ -33,8 +33,7 @@ function App() {
     loadChartData();
     // Connect socket immediately for real-time updates
     connectSocket();
-    // Start HTTP polling for real-time updates (primary method)
-    startPolling();
+    // Note: Don't start polling here - only start when processing begins
     
     // Cleanup on unmount
     return () => {
@@ -42,7 +41,7 @@ function App() {
     };
   }, [isAuthenticated, token]);
 
-  // Additional effect to poll immediately for current status
+  // Additional effect to check initial status on app load (single check, not continuous polling)
   useEffect(() => {
     // Check current processing status on app load
     const checkInitialStatus = async () => {
@@ -51,7 +50,14 @@ function App() {
         if (response.ok) {
           const data = await response.json();
           console.log('🔄 Initial status check:', data);
-          setIsProcessing(data.processing_active === true);
+          const backendProcessingActive = data.processing_active === true;
+          setIsProcessing(backendProcessingActive);
+          
+          // If processing is already active (e.g., after page refresh during processing), start polling
+          if (backendProcessingActive) {
+            console.log('🔄 Processing detected on load, starting polling...');
+            startPolling();
+          }
         }
       } catch (error) {
         console.log('🔄 Initial status check failed:', error);
@@ -135,8 +141,10 @@ function App() {
 
   // 🔄 HTTP Polling for real-time updates (more reliable than Socket.IO)
   const startPolling = () => {
+    // Don't start polling if it's already running
     if (pollingInterval) {
-      clearInterval(pollingInterval);
+      console.log('🔄 Polling is already active, skipping start request');
+      return;
     }
 
     const poll = async () => {
@@ -170,9 +178,13 @@ function App() {
             setIsProcessing(true);
             console.log('🔄 ✅ Updated traffic data from polling - processing active');
           } else {
-            // Processing is not active or has stopped
+            // Processing is not active or has stopped on the backend
             setIsProcessing(false);
             console.log('🔄 🛑 Processing stopped or inactive detected via polling');
+            
+            // Stop polling since processing is no longer active
+            stopPolling();
+            console.log('🔄 Stopped polling because backend processing is inactive');
           }
         }
       } catch (error) {
@@ -187,14 +199,14 @@ function App() {
     // Also poll immediately
     poll();
     
-    console.log('🔄 ✅ Started HTTP polling for real-time updates');
+    console.log('🔄 ✅ Started HTTP polling for real-time updates (1-second intervals)');
   };
 
   const stopPolling = () => {
     if (pollingInterval) {
       clearInterval(pollingInterval);
       setPollingInterval(null);
-      console.log('🔄 🛑 Stopped HTTP polling');
+      console.log('🔄 🛑 Stopped HTTP polling - no longer checking for real-time updates');
     }
   };
 
@@ -338,11 +350,12 @@ function App() {
     // Immediately update UI state to show processing is starting
     setIsProcessing(true);
     
+    // Start polling for real-time updates now that processing is beginning
+    startPolling();
+    console.log('🔄 Started polling because processing is beginning');
+    
     // Connect socket first, then start processing
     const socketConnection = connectSocket();
-    
-    // Ensure polling is active for real-time updates
-    startPolling();
     
     // Wait a moment for connection, then start processing
     setTimeout(() => {
@@ -363,20 +376,23 @@ function App() {
     // Immediately update UI to show processing is stopping
     setIsProcessing(false);
     
+    // Stop polling since processing is ending
+    stopPolling();
+    console.log('🔄 Stopped polling because processing is ending');
+    
     if (socket) {
       socket.emit('stop_processing', {});
-      // Note: Keep polling active to detect when processing actually stops
-      // The polling will confirm the stop status
       return true;
     }
     console.log('❌ Frontend: No socket available');
     return false;
   };
 
-  // Cleanup socket on unmount
+  // Cleanup socket and polling on unmount
   useEffect(() => {
     return () => {
       disconnectSocket();
+      stopPolling();
     };
   }, []);
 
@@ -406,6 +422,7 @@ function App() {
       data={trafficData}
       history={history}
       isProcessing={isProcessing}
+      isPolling={pollingInterval !== null}
       onStartProcessing={startProcessing}
       onStopProcessing={stopProcessing}
       onRefreshChart={refreshChart}

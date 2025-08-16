@@ -5,7 +5,7 @@ import TrafficChart from './TrafficChart.jsx';
 import ChartControls from './ChartControls.jsx';
 import { FaCar, FaBus, FaTruck, FaMotorcycle, FaEye, FaClock } from 'react-icons/fa';
 
-const Dashboard = ({ data, history, isProcessing, onStartProcessing, onStopProcessing, onRefreshChart, onLogout }) => {
+const Dashboard = ({ data, history, isProcessing, isPolling, onStartProcessing, onStopProcessing, onRefreshChart, onLogout }) => {
   // Default data structure to prevent undefined errors
   const defaultData = {
     count: 0,
@@ -174,11 +174,21 @@ const Dashboard = ({ data, history, isProcessing, onStartProcessing, onStopProce
               </div>
 
               {/* Status Indicator */}
-              <div className="flex items-center">
-                <div className={`w-3 h-3 rounded-full mr-2 ${isProcessing ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
-                <span className="text-sm text-gray-600">
-                  {isProcessing ? 'Active' : 'Inactive'}
-                </span>
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center">
+                  <div className={`w-3 h-3 rounded-full mr-2 ${isProcessing ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                  <span className="text-sm text-gray-600">
+                    {isProcessing ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                
+                {/* Polling Status */}
+                <div className="flex items-center">
+                  <div className={`w-2 h-2 rounded-full mr-2 ${isPolling ? 'bg-blue-500 animate-ping' : 'bg-gray-300'}`}></div>
+                  <span className="text-xs text-gray-500">
+                    {isPolling ? 'Real-time' : 'Static'}
+                  </span>
+                </div>
               </div>
 
               {/* Logout Button */}
