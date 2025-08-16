@@ -19,7 +19,6 @@ from app.models.traffic_data import TrafficData
 from app.models.user import User
 from app.services import AuthService, TrafficDataService
 from app.utils.video_processor import start_video_processing, stop_video_processing, is_processing_active
-from ..utils.realtime_polling import write_realtime_data, read_realtime_data
 from app import Session
 
 # Initialize blueprint
@@ -68,8 +67,9 @@ def logout():
     return response
 
 @api.route('/data')
+@jwt_required()
 def get_data():
-    """Get recent traffic data for dashboard (public access)."""
+    """Get recent traffic data for dashboard."""
     try:
         limit = request.args.get('limit', 10, type=int)
         limit = max(1, min(limit, 100))
@@ -109,8 +109,9 @@ def get_data():
         return jsonify({'error': 'Failed to fetch traffic data'}), 500
 
 @api.route('/current-status')
+@jwt_required()
 def get_current_status():
-    """Get current traffic status and system state (public access)."""
+    """Get current traffic status and system state."""
     try:
         session = Session()
         try:
@@ -183,16 +184,6 @@ def video_stream():
         logger.error(f"Error serving video stream: {e}")
         return jsonify({'error': 'Failed to serve video stream'}), 500
 
-@api.route('/realtime-status')
-def get_realtime_status():
-    """Get current real-time status for polling (much more reliable than Socket.IO)"""
-    try:
-        data = read_realtime_data()
-        return jsonify(data)
-    except Exception as e:
-        logger.error(f"Error getting realtime status: {e}")
-        return jsonify({'error': str(e)}), 500
-
 
 def register_socketio_handlers(socketio):
     """Register simplified SocketIO event handlers without authentication"""
@@ -256,7 +247,8 @@ def register_socketio_handlers(socketio):
                 return
             
             # Get session for database operations
-            session = Session()
+            from app import db
+            session = db.session
             
             # Start processing
             junction = data.get('junction', 'main_junction') if data else 'main_junction'

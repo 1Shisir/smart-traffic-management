@@ -14,7 +14,6 @@ const VideoPreview = () => {
       setError(false);
       setLoading(false);
     } catch (err) {
-      console.error('Error setting up video stream:', err);
       setError(true);
       setLoading(false);
     }
@@ -26,7 +25,6 @@ const VideoPreview = () => {
   }, []);
 
   const handleVideoError = () => {
-    console.error('Video failed to load');
     setError(true);
     setLoading(false);
   };

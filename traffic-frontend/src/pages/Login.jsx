@@ -47,17 +47,13 @@ const Login = () => {
     }
 
     try {
-      const result = await login({
-        username: sanitizedUsername,
-        password: sanitizedPassword
-      });
+      const result = await login(sanitizedUsername, sanitizedPassword);
       
       if (!result.success) {
         setError(result.error || 'Login failed');
       }
       // If success, the App component will handle the state change
     } catch (error) {
-      console.error('Login error:', error);
       setError('An unexpected error occurred');
     } finally {
       setIsLoading(false);

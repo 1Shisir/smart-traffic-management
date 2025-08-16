@@ -10,12 +10,13 @@ import torch
 from ultralytics import YOLO
 from app.models.traffic_data import TrafficData
 from app.config import Config
+from .realtime_polling import write_realtime_data, read_realtime_data
 
 # Global variables for process control
 processing_active = False
-processing_thread = None
 stop_event = threading.Event()
 frame_for_preview = None
+current_user_room = None  # Track the current user room for proper event targeting
 
 # SocketIO instance will be set by the main app
 socketio = None
@@ -79,8 +80,8 @@ def get_traffic_light_state(total_count):
         return "green", 30
 
 def start_video_processing(app, socketio_param, session, junction="main_junction", video_path=None, user_room=None):
-    """Start video processing in a separate thread."""
-    global processing_active, processing_thread, stop_event, socketio
+    """Start video processing using Flask-SocketIO background task."""
+    global processing_active, stop_event, socketio, current_user_room
     
     if processing_active:
         logging.warning("Video processing is already active")
@@ -89,41 +90,219 @@ def start_video_processing(app, socketio_param, session, junction="main_junction
     stop_event.clear()
     processing_active = True
     socketio = socketio_param  # Assign the socketio parameter to global variable
+    current_user_room = user_room  # Store the current user room globally
     
-    # Start processing in a separate thread
+    # Use regular threading since Flask-SocketIO background task might be causing issues
     processing_thread = threading.Thread(
-        target=process_video,
-        args=(session, junction, video_path, user_room),
+        target=process_video_with_context,
+        args=(socketio_param, session, junction, video_path, user_room),
         daemon=True
     )
     processing_thread.start()
     
-    logging.info(f"Started video processing thread for {junction}")
+    logging.info(f"Started video processing thread for {junction} (user room: {user_room})")
     return True
 
-def stop_video_processing():
-    """Stop video processing."""
-    global processing_active, stop_event
+def process_video_with_context(socketio_instance, session, junction="main_junction", video_path=None, user_room=None):
+    """Wrapper function to call process_video with proper context."""
+    try:
+        # Set the global socketio instance
+        global socketio, current_user_room
+        socketio = socketio_instance
+        current_user_room = user_room  # Ensure the user room is available globally
+        
+        # Call the actual video processing function
+        process_video(session, junction, video_path, user_room)
+    except Exception as e:
+        logging.error(f"Error in video processing wrapper: {e}")
+        global processing_active
+        processing_active = False
+current_user_room = None  # Track the current user room for proper event targeting
+
+# SocketIO instance will be set by the main app
+socketio = None
+
+def set_socketio(socketio_instance):
+    """Set the SocketIO instance for real-time updates."""
+    global socketio
+    socketio = socketio_instance
+
+def detect_vehicles(frame, model, vehicle_labels):
+    """Detect vehicles in frame with proper memory management."""
+    try:
+        # Resize frame for consistent processing
+        frame = cv2.resize(frame, (640, 480))
+        
+        # Run YOLO detection with memory optimization
+        results = model(frame, verbose=False)[0]
+        class_counts = {'car': 0, 'bus': 0, 'truck': 0, 'motorcycle': 0}
+
+        # Process detections with confidence threshold
+        for box in results.boxes:
+            cls_id = int(box.cls[0])
+            name = model.names[cls_id]
+            conf = float(box.conf[0])
+            
+            # Only process high-confidence detections
+            if name in vehicle_labels and conf > 0.5:
+                class_counts[name] += 1
+                
+                # Draw bounding boxes with proper coordinates
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                x1, y1 = max(0, x1), max(0, y1)  # Ensure coordinates are positive
+                x2, y2 = min(640, x2), min(480, y2)  # Ensure coordinates are within frame
+                
+                label = f"{name} ({int(conf*100)}%)"
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(frame, label, (x1, max(20, y1 - 10)), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+        total_count = sum(class_counts.values())
+        
+        # Validate counts are reasonable (prevent integer overflow)
+        total_count = min(total_count, 1000)  # Max 1000 vehicles per frame
+        for key in class_counts:
+            class_counts[key] = min(class_counts[key], 1000)
+        
+        return total_count, class_counts, frame
+        
+    except Exception as e:
+        logging.error(f"YOLO detection error: {e}")
+        # Return safe defaults on error
+        return 0, {'car': 0, 'bus': 0, 'truck': 0, 'motorcycle': 0}, frame
+
+def get_traffic_light_state(total_count):
+    """Determine traffic light state based on vehicle count."""
+    if total_count >= Config.TRAFFIC_LIGHT_THRESHOLD:
+        return "red", 40
+    elif total_count >= 8:
+        return "yellow", 5
+    else:
+        return "green", 30
+
+def start_video_processing(app, socketio_param, session, junction="main_junction", video_path=None, user_room=None):
+    """Start video processing using Flask-SocketIO background task."""
+    global processing_active, stop_event, socketio, current_user_room
+    
+    if processing_active:
+        logging.warning("Video processing is already active")
+        return False
+    
+    stop_event.clear()
+    processing_active = True
+    socketio = socketio_param  # Assign the socketio parameter to global variable
+    current_user_room = user_room  # Store the current user room globally
+    
+    # Use regular threading since Flask-SocketIO background task might be causing issues
+    processing_thread = threading.Thread(
+        target=process_video_with_context,
+        args=(socketio_param, session, junction, video_path, user_room),
+        daemon=True
+    )
+    processing_thread.start()
+    
+    logging.info(f"Started video processing thread for {junction} (user room: {user_room})")
+    return True
+
+def process_video_with_context(socketio_instance, session, junction="main_junction", video_path=None, user_room=None):
+    """Wrapper function to call process_video with proper context."""
+    try:
+        # Set the global socketio instance
+        global socketio
+        socketio = socketio_instance
+        
+        # Call the actual video processing function
+        process_video(session, junction, video_path, user_room)
+    except Exception as e:
+        logging.error(f"Error in video processing wrapper: {e}")
+        global processing_active
+        processing_active = False
+
+def stop_video_processing(user_room=None):
+    """Stop video processing and emit stop event to the appropriate room."""
+    global processing_active, stop_event, socketio
+    
+    logging.info(f"🛑 VideoProcessor: stop_video_processing called with user_room={user_room}")
+    logging.info(f"🛑 VideoProcessor: processing_active={processing_active}")
     
     if not processing_active:
-        logging.warning("Video processing is not active")
+        logging.warning("🛑 VideoProcessor: Video processing is not active")
         return False
     
     stop_event.set()
     processing_active = False
-    logging.info("Video processing stop requested")
+    logging.info("🛑 VideoProcessor: Video processing stop requested, flags set")
+    
+    # Emit processing_stopped event to the appropriate room
+    if socketio:
+        logging.info(f"🛑 VideoProcessor: socketio instance available, preparing to emit")
+        stop_data = {
+            'message': 'Video processing stopped',
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Write stop status to polling file
+        try:
+            write_realtime_data({
+                'processing_active': False,
+                'status': 'stopped',
+                'message': 'Video processing stopped',
+                'timestamp': stop_data['timestamp']
+            })
+            logging.info(f"📝 Written stop status for HTTP polling")
+        except Exception as write_error:
+            logging.warning(f"📝 ⚠️ Failed to write stop status: {write_error}")
+        
+        if user_room:
+            logging.info(f"🛑 VideoProcessor: Emitting processing_stopped to room: {user_room}")
+            socketio.emit('processing_stopped', stop_data, room=user_room)
+        else:
+            logging.info(f"🛑 VideoProcessor: Broadcasting processing_stopped to all clients")
+            socketio.emit('processing_stopped', stop_data)
+    else:
+        logging.warning(f"🛑 VideoProcessor: socketio instance is None, cannot emit event")
+    
+    logging.info(f"🛑 VideoProcessor: stop_video_processing returning True")
     return True
 
 def is_processing_active():
     """Check if video processing is currently active."""
     return processing_active
 
+def get_frame_for_preview():
+    """Get the current frame for preview (base64 encoded)."""
+    global frame_for_preview
+    
+    if frame_for_preview is None:
+        return None
+    
+    try:
+        # Encode frame as JPEG
+        success, buffer = cv2.imencode('.jpg', frame_for_preview)
+        if success:
+            import base64
+            # Convert to base64 string
+            jpg_as_text = base64.b64encode(buffer).decode('utf-8')
+            return f"data:image/jpeg;base64,{jpg_as_text}"
+        else:
+            return None
+    except Exception as e:
+        logging.error(f"Error encoding frame for preview: {e}")
+        return None
+
 def process_video(session, junction="main_junction", video_path=None, user_room=None):
     """Process video and emit real-time updates via WebSocket with proper resource management."""
     global frame_for_preview, processing_active, socketio
     
-    # Debug: Check if socketio is available
-    logging.info(f"🔧 Starting video processing with SocketIO: {socketio is not None}")
+    # Debug: Check parameters and socketio availability
+    logging.info(f"🔧 Starting video processing with:")
+    logging.info(f"🔧 - Junction: {junction}")
+    logging.info(f"🔧 - Video path: {video_path}")
+    logging.info(f"🔧 - User room: {user_room}")
+    logging.info(f"🔧 - SocketIO available: {socketio is not None}")
+    
+    if not user_room:
+        logging.warning(f"⚠️ WARNING: No user_room provided! Events will be broadcasted to all clients.")
     
     entries_buffer = []
     cap = None
@@ -267,26 +446,43 @@ def process_video(session, junction="main_junction", video_path=None, user_room=
                         'duration': light_duration
                     }
                     
-                    if user_room:
-                        # Send to specific user room
-                        logging.info(f"📡 About to emit 'update' to room: {user_room}")
-                        logging.info(f"📡 Update data: {update_data}")
-                        socketio.emit('update', update_data, room=user_room)
-                        
-                        logging.info(f"📡 About to emit 'traffic_light' to room: {user_room}")
-                        logging.info(f"📡 Traffic light data: {traffic_light_data}")
-                        socketio.emit('traffic_light', traffic_light_data, room=user_room)
-                        
-                        logging.info(f"📡 ✅ SocketIO events successfully emitted to room {user_room}")
-                    else:
-                        # Fallback to broadcast (for backward compatibility)
-                        logging.info(f"📡 About to broadcast 'update' to all clients")
+                # ✅ WRITE DATA FOR HTTP POLLING (much more reliable than Socket.IO)
+                try:
+                    # Write real-time data to file for frontend polling
+                    realtime_data = {
+                        'timestamp': update_data['timestamp'],
+                        'car_count': update_data['car'],
+                        'truck_count': update_data['truck'],
+                        'bus_count': update_data['bus'],
+                        'motorcycle_count': update_data['motorcycle'],
+                        'total_vehicles': update_data['count'],
+                        'frame_count': update_data['frame_count'],
+                        'total_frames': update_data['total_frames'],
+                        'traffic_light_state': update_data['traffic_light'],
+                        'traffic_light_duration': update_data['light_duration'],
+                        'processing_active': True,
+                        'junction': update_data['junction']
+                    }
+                    
+                    write_realtime_data(realtime_data)
+                    logging.info(f"📝 Written real-time data for HTTP polling: frame {frame_count}")
+                    
+                except Exception as write_error:
+                    logging.warning(f"📝 ⚠️ Failed to write real-time data: {write_error}")
+                
+                # ✅ OPTIONAL: Keep Socket.IO as backup (but polling is primary)
+                if socketio:
+                    try:
+                        # Simple broadcast approach - much more reliable
+                        logging.info(f"📡 Broadcasting 'update' to all clients")
                         socketio.emit('update', update_data)
                         
-                        logging.info(f"📡 About to broadcast 'traffic_light' to all clients")
+                        logging.info(f"📡 Broadcasting 'traffic_light' to all clients")
                         socketio.emit('traffic_light', traffic_light_data)
                         
-                        logging.info(f"📡 ✅ SocketIO events broadcasted to all clients")
+                        logging.debug(f"📡 ✅ SocketIO events successfully broadcasted")
+                    except Exception as emit_error:
+                        logging.warning(f"📡 ⚠️ Failed to broadcast events (client may have disconnected): {emit_error}")
                 else:
                     logging.warning(f"⚠️ No SocketIO instance available for frame {frame_count}")
 
@@ -306,6 +502,7 @@ def process_video(session, junction="main_junction", video_path=None, user_room=
     
     finally:
         # Comprehensive cleanup
+        global current_user_room
         processing_active = False
         
         # Clean up video capture
@@ -333,8 +530,25 @@ def process_video(session, junction="main_junction", video_path=None, user_room=
         # Clean up global frame
         frame_for_preview = None
         
-        # Note: processing_stopped event will be emitted by the API handler
-        # that has access to the user room information
+        # Emit processing_stopped event to the correct room
+        if socketio:
+            completion_data = {
+                'message': f'Video processing completed for {junction}',
+                'junction': junction,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            if current_user_room:
+                logging.info(f"🛑 Video processor: Emitting processing_stopped to room {current_user_room}")
+                socketio.emit('processing_stopped', completion_data, room=current_user_room)
+            else:
+                logging.info(f"🛑 Video processor: Broadcasting processing_stopped to all clients")
+                socketio.emit('processing_stopped', completion_data)
+            
+            logging.info(f"🛑 Video processor: Successfully emitted processing_stopped")
+        
+        # Reset current user room
+        current_user_room = None
         
         logging.info(f"Video processing cleanup completed for {junction}")
 

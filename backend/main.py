@@ -25,6 +25,7 @@ from app import create_app
 from app.config import Config
 from app.models.traffic_data import Base
 from app.models.user import User
+from app.utils.realtime_polling import clear_stale_data
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -110,6 +111,9 @@ def main() -> None:
         
         # Setup database
         setup_database()
+        
+        # Clear any stale realtime data from previous runs
+        clear_stale_data()
         
         # Create Flask app and SocketIO instance
         app_instance, socketio_instance = create_app()

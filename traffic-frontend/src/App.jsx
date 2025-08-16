@@ -22,28 +22,50 @@ function App() {
   });
   const [history, setHistory] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [pollingInterval, setPollingInterval] = useState(null);
 
-  // Debug effect to track isProcessing state changes
-  useEffect(() => {
-    console.log('🔄 isProcessing state changed to:', isProcessing);
-    console.log('🔄 Will pass isProcessing =', isProcessing, 'to Dashboard component');
-  }, [isProcessing]);
-
-  // Load initial data when authenticated
+  // Load initial data when authenticated and connect socket
   useEffect(() => {
     if (isAuthenticated && token) {
       loadInitialData();
     }
     // Load chart data regardless of authentication (for public access)
     loadChartData();
+    // Connect socket immediately for real-time updates
+    connectSocket();
+    // Start HTTP polling for real-time updates (primary method)
+    startPolling();
+    
+    // Cleanup on unmount
+    return () => {
+      stopPolling();
+    };
   }, [isAuthenticated, token]);
+
+  // Additional effect to poll immediately for current status
+  useEffect(() => {
+    // Check current processing status on app load
+    const checkInitialStatus = async () => {
+      try {
+        const response = await fetch('/api/realtime-status');
+        if (response.ok) {
+          const data = await response.json();
+          console.log('🔄 Initial status check:', data);
+          setIsProcessing(data.processing_active === true);
+        }
+      } catch (error) {
+        console.log('🔄 Initial status check failed:', error);
+        // Default to false if can't reach server
+        setIsProcessing(false);
+      }
+    };
+    
+    checkInitialStatus();
+  }, []);
 
   const loadInitialData = async () => {
     try {
-      console.log('📊 Loading initial traffic data...');
-      
-      // First, try to get current status (no auth required)
-      const statusResponse = await fetch('http://localhost:5000/api/current-status', {
+      const statusResponse = await fetch('/api/current-status', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -52,45 +74,31 @@ function App() {
 
       if (statusResponse.ok) {
         const statusData = await statusResponse.json();
-        console.log('📊 Current status loaded:', statusData);
         
         // Update current traffic data
         if (statusData.current_data) {
           setTrafficData(prev => ({
             ...prev,
-            junction: statusData.current_data.junction,
-            time: statusData.current_data.time,
-            count: statusData.current_data.count,
-            car: statusData.current_data.car,
-            bus: statusData.current_data.bus,
-            truck: statusData.current_data.truck,
-            motorcycle: statusData.current_data.motorcycle,
-            traffic_light: statusData.current_data.traffic_light,
-            light_duration: statusData.current_data.light_duration
+            ...statusData.current_data
           }));
         }
-        
-        // Update processing state from backend
+
+        // Set processing state
         if (statusData.system_status) {
-          setIsProcessing(statusData.system_status.processing_active);
-          console.log('📊 Processing state from backend:', statusData.system_status.processing_active);
+          setIsProcessing(statusData.system_status.processing_active || false);
         }
       }
-      
-      // Load chart data from database (chart will be populated separately)
+
       await loadChartData();
       
     } catch (error) {
-      console.error('📊 Error loading initial data:', error);
-      // Try to generate sample data as fallback
       await generateSampleData();
     }
   };
 
   const loadChartData = async () => {
     try {
-      console.log('📊 Loading chart data from database...');
-      const response = await fetch('http://localhost:5000/api/data?limit=50', {
+      const response = await fetch('/api/data?limit=50', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -99,20 +107,16 @@ function App() {
 
       if (response.ok) {
         const chartData = await response.json();
-        console.log('📊 Chart data loaded:', chartData.length, 'records from database');
         setHistory(chartData);
-      } else {
-        console.error('📊 Failed to load chart data:', response.status);
       }
     } catch (error) {
-      console.error('📊 Error loading chart data:', error);
+      // Silently handle error
     }
   };
 
   const generateSampleData = async () => {
     try {
-      console.log('🎲 Generating sample data...');
-      const response = await fetch('http://localhost:5000/api/generate-sample-data', {
+      const response = await fetch('/api/generate-sample-data', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -122,132 +126,193 @@ function App() {
       });
 
       if (response.ok) {
-        const result = await response.json();
-        console.log('🎲 Sample data generated:', result.message);
-        // Reload chart data after generation
         setTimeout(() => loadChartData(), 1000);
-      } else {
-        console.error('🎲 Failed to generate sample data');
       }
     } catch (error) {
-      console.error('🎲 Error generating sample data:', error);
+      // Silently handle error
     }
   };
 
-  // Initialize socket connection after authentication
-  useEffect(() => {
-    console.log('🔌 ========== SOCKET INITIALIZATION EFFECT ==========');
-    console.log('🔌 isAuthenticated:', isAuthenticated);
-    console.log('🔌 isLoading:', isLoading);
-    console.log('🔌 token available:', !!token);
-    console.log('🔌 socket exists:', !!socket);
-    console.log('🔌 Condition check:', isAuthenticated, '&&', !isLoading, '&&', !!token, '&&', !socket);
-    console.log('🔌 Should initialize?', isAuthenticated && !isLoading && token && !socket);
-    
-    if (isAuthenticated && !isLoading && token && !socket) {
-      console.log('🔌 ✅ All conditions met - initializing socket connection...');
-      console.log('🔌 Initializing socket connection with authenticated token...');
-      const newSocket = io('http://localhost:5000', {
-        auth: { token },
-        transports: ['websocket', 'polling'],
-        upgrade: true,
-        rememberUpgrade: true
-      });
-
-        newSocket.on('connect', () => {
-          console.log('🔌 Socket connected successfully');
-          console.log('🔌 Socket ID:', newSocket.id);
-        });
-
-        newSocket.on('disconnect', () => {
-          console.log('🔌 Socket disconnected');
-        });
-
-        newSocket.on('connect_error', (error) => {
-          console.error('🔌 Socket connection error:', error);
-          // If authentication error, clear token and logout
-          if (error.message && error.message.includes('authentication')) {
-            console.log('Socket authentication failed, logging out');
-            logout();
-          }
-        });
-
-        // Listen for real-time traffic data updates
-        newSocket.on('update', (data) => {
-          console.log('📡 Received real-time update:', data);
-          
-          // Map backend data structure to frontend structure
-          const mappedData = {
-            junction: data.junction || 'Main Junction',
-            time: data.time || new Date().toLocaleTimeString(),
-            count: data.count || 0,
-            car: data.car || 0,
-            bus: data.bus || 0,
-            truck: data.truck || 0,
-            motorcycle: data.motorcycle || 0,
-            traffic_light: data.traffic_light || 'red',
-            light_duration: data.light_duration || 30,
-            // Keep additional backend fields for debugging
-            timestamp: data.timestamp,
-            frame_count: data.frame_count,
-            total_frames: data.total_frames
-          };
-          
-          console.log('📊 Mapped traffic data:', mappedData);
-          setTrafficData(mappedData);
-        });
-
-        // Listen for traffic light state changes
-        newSocket.on('traffic_light', (data) => {
-          console.log('Received traffic light update:', data);
-          setTrafficData(prev => ({
-            ...prev,
-            traffic_light: data.state,
-            light_duration: data.duration
-          }));
-        });
-
-        // Listen for processing state changes
-        newSocket.on('processing_started', (data) => {
-          console.log('✅ Processing started event received:', data);
-          setIsProcessing(prevState => {
-            console.log('✅ Setting isProcessing from', prevState, 'to true');
-            return true;
-          });
-        });
-
-        newSocket.on('processing_stopped', (data) => {
-          console.log('🛑 Processing stopped event received:', data);
-          setIsProcessing(prevState => {
-            console.log('🛑 Setting isProcessing from', prevState, 'to false');
-            return false;
-          });
-        });
-
-        // Listen for processing errors
-        newSocket.on('processing_error', (data) => {
-          console.error('❌ Processing error event received:', data);
-          setIsProcessing(prevState => {
-            console.log('❌ Setting isProcessing from', prevState, 'to false due to error');
-            return false;
-          });
-        });
-
-        // Debug: Add a catch-all listener to see what events are received
-        newSocket.onAny((eventName, ...args) => {
-          console.log('📥 RECEIVED WebSocket event:', eventName, args);
-        });
-
-        setSocket(newSocket);
+  // 🔄 HTTP Polling for real-time updates (more reliable than Socket.IO)
+  const startPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
     }
-  }, [isAuthenticated, token, socket, isLoading]);
+
+    const poll = async () => {
+      try {
+        console.log('🔄 Polling for real-time updates...');
+        const response = await fetch('/api/realtime-status');
+        
+        if (response.ok) {
+          const realtimeData = await response.json();
+          console.log('🔄 📥 Received polling data:', realtimeData);
+          
+          // Always update processing status based on backend data
+          const backendProcessingActive = realtimeData.processing_active === true;
+          
+          if (backendProcessingActive) {
+            // Update traffic data when processing is active
+            setTrafficData(prevData => ({
+              ...prevData,
+              junction: realtimeData.junction || prevData.junction,
+              count: realtimeData.total_vehicles || 0,
+              car: realtimeData.car_count || 0,
+              bus: realtimeData.bus_count || 0,
+              truck: realtimeData.truck_count || 0,
+              motorcycle: realtimeData.motorcycle_count || 0,
+              traffic_light: realtimeData.traffic_light_state || 'red',
+              light_duration: realtimeData.traffic_light_duration || 30,
+              time: new Date(realtimeData.timestamp).toLocaleTimeString() || new Date().toLocaleTimeString()
+            }));
+            
+            // Update processing status to active
+            setIsProcessing(true);
+            console.log('🔄 ✅ Updated traffic data from polling - processing active');
+          } else {
+            // Processing is not active or has stopped
+            setIsProcessing(false);
+            console.log('🔄 🛑 Processing stopped or inactive detected via polling');
+          }
+        }
+      } catch (error) {
+        console.error('🔄 ❌ Polling error:', error);
+      }
+    };
+
+    // Start polling every 1 second for real-time updates
+    const intervalId = setInterval(poll, 1000);
+    setPollingInterval(intervalId);
+    
+    // Also poll immediately
+    poll();
+    
+    console.log('🔄 ✅ Started HTTP polling for real-time updates');
+  };
+
+  const stopPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+      console.log('🔄 🛑 Stopped HTTP polling');
+    }
+  };
+
+  // Socket connection management - simplified without authentication
+  const connectSocket = () => {
+    if (socket) return socket; // Already connected
+    
+    console.log('🔌 Connecting socket without authentication...');
+    const newSocket = io('/', {
+      transports: ['websocket', 'polling'],
+      upgrade: true,
+      rememberUpgrade: true,
+      forceNew: false, // Changed to false to reuse connections
+      reconnection: true, // Allow auto-reconnect
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      timeout: 20000
+    });
+
+    newSocket.on('connect', () => {
+      console.log('🔌 Socket connected successfully (no auth)');
+      console.log('🔌 Socket ID:', newSocket.id);
+      console.log('🔌 Socket connected:', newSocket.connected);
+      // Test connection immediately
+      newSocket.emit('test_connection', {});
+    });
+
+    newSocket.on('test_response', (data) => {
+      console.log('✅ Socket test response:', data);
+    });
+
+    newSocket.on('disconnect', (reason) => {
+      console.log('🔌 Socket disconnected:', reason);
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.log('❌ Socket connection error:', error);
+    });
+
+    newSocket.on('error', (error) => {
+      console.log('❌ Socket error:', error);
+    });
+
+    // Add catch-all event listener to debug what events are received
+    newSocket.onAny((eventName, ...args) => {
+      console.log('🎯 Received Socket.IO event:', eventName, args);
+    });
+
+    // Listen for real-time traffic data updates
+    newSocket.on('update', (data) => {
+      console.log('📊 Received update event:', data);
+      setTrafficData(prev => ({
+        ...prev,
+        junction: data.junction || prev.junction,
+        time: data.time || prev.time,
+        count: data.count || 0,
+        car: data.car || 0,
+        bus: data.bus || 0,
+        truck: data.truck || 0,
+        motorcycle: data.motorcycle || 0,
+        traffic_light: data.traffic_light || prev.traffic_light,
+        light_duration: data.light_duration || prev.light_duration
+      }));
+    });
+
+    // Listen for traffic light updates
+    newSocket.on('traffic_light', (data) => {
+      console.log('🚦 Received traffic_light event:', data);
+      setTrafficData(prev => ({
+        ...prev,
+        traffic_light: data.state || prev.traffic_light,
+        light_duration: data.duration || prev.light_duration
+      }));
+    });
+
+    // Listen for processing state changes
+    newSocket.on('processing_started', (data) => {
+      console.log('🚀 Received processing_started event:', data);
+      setIsProcessing(true);
+    });
+
+    newSocket.on('processing_stopped', (data) => {
+      console.log('✅ Received processing_stopped event:', data);
+      setIsProcessing(false);
+      // Keep socket connected for continuous updates
+    });
+
+    newSocket.on('processing_stopped_global', (data) => {
+      console.log('🌍 Received processing_stopped_global event:', data);
+      setIsProcessing(false);
+      // Keep socket connected for continuous updates
+    });
+
+    newSocket.on('processing_error', (data) => {
+      console.log('❌ Received processing_error event:', data);
+      setIsProcessing(false);
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.log('❌ Socket connection error:', error);
+    });
+
+    setSocket(newSocket);
+    return newSocket;
+  };
+
+  const disconnectSocket = () => {
+    if (socket) {
+      console.log('🔌 Disconnecting socket...');
+      socket.disconnect();
+      setSocket(null);
+    }
+  };
 
   // Ensure socket is disconnected when not authenticated
   useEffect(() => {
     if (!isAuthenticated && socket) {
-      console.log('User not authenticated, disconnecting socket...');
-      socket.disconnect();
-      setSocket(null);
+      disconnectSocket();
     }
   }, [isAuthenticated, socket]);
 
@@ -255,95 +320,65 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated || !token) return;
 
-    // Initial load of chart data
     loadChartData();
 
-    // Set up periodic refresh - more frequent when processing is active
-    const refreshInterval = isProcessing ? 30000 : 120000; // 30s when processing, 2min when idle
-    
-    console.log(`📊 Setting up chart data refresh every ${refreshInterval/1000} seconds`);
+    const refreshInterval = isProcessing ? 30000 : 120000;
     const intervalId = setInterval(() => {
       loadChartData();
     }, refreshInterval);
 
     return () => {
-      console.log('📊 Clearing chart data refresh interval');
       clearInterval(intervalId);
     };
   }, [isAuthenticated, token, isProcessing]);
 
   const startProcessing = () => {
-    if (socket) {
-      if (token) {
-        console.log('🚀 Starting video processing...');
-        console.log('Current isProcessing state before start:', isProcessing);
-        socket.emit('start_processing', { token });
-        
-        // Optimistically update state immediately for better UX
-        console.log('🚀 Optimistically setting isProcessing to true for immediate UI update');
-        setIsProcessing(true);
-        
-        return true;
-      } else {
-        console.error('No token available for start_processing');
-        return false;
+    console.log('🚀 Frontend: Starting processing without auth - connecting socket first');
+    
+    // Immediately update UI state to show processing is starting
+    setIsProcessing(true);
+    
+    // Connect socket first, then start processing
+    const socketConnection = connectSocket();
+    
+    // Ensure polling is active for real-time updates
+    startPolling();
+    
+    // Wait a moment for connection, then start processing
+    setTimeout(() => {
+      if (socketConnection) {
+        console.log('🚀 Frontend: Sending start_processing event (no auth)');
+        socketConnection.emit('start_processing', {
+          junction: 'main_junction'
+        });
       }
-    } else {
-      console.error('No socket connection available for start_processing');
-      return false;
-    }
+    }, 1000);
+    
+    return true;
   };
 
   const stopProcessing = () => {
-    console.log('🛑 stopProcessing function called');
-    console.log('🛑 Socket exists:', !!socket);
-    console.log('🛑 Socket connected:', socket?.connected);
-    console.log('🛑 Socket ID:', socket?.id);
+    console.log('🛑 Frontend: Sending stop_processing event (no auth)');
+    
+    // Immediately update UI to show processing is stopping
+    setIsProcessing(false);
     
     if (socket) {
-      console.log('🛑 Token exists:', !!token);
-      
-      if (token) {
-        console.log('🛑 Stopping video processing...');
-        console.log('🛑 Current isProcessing state before stop:', isProcessing);
-        console.log('🛑 About to emit stop_processing event with token');
-        socket.emit('stop_processing', { token });
-        console.log('🛑 stop_processing event emitted successfully');
-        
-        // Add timeout to check if backend responds
-        setTimeout(() => {
-          console.log('⏰ Checking if stop processing response was received after 3 seconds...');
-          console.log('⏰ Current isProcessing state:', isProcessing);
-          if (isProcessing) {
-            console.warn('⚠️ No response received from backend after 3 seconds');
-            console.log('🔄 Force-setting isProcessing to false as fallback');
-            // Force set processing to false as fallback
-            setIsProcessing(prevState => {
-              console.log('🔄 Timeout fallback: Setting isProcessing from', prevState, 'to false');
-              return false;
-            });
-          }
-        }, 3000);
-        
-        return true;
-      } else {
-        console.error('❌ No token available for stop_processing');
-        return false;
-      }
-    } else {
-      console.error('❌ No socket connection available for stop_processing');
-      return false;
+      socket.emit('stop_processing', {});
+      // Note: Keep polling active to detect when processing actually stops
+      // The polling will confirm the stop status
+      return true;
     }
+    console.log('❌ Frontend: No socket available');
+    return false;
   };
 
   // Cleanup socket on unmount
   useEffect(() => {
     return () => {
-      if (socket) {
-        socket.disconnect();
-      }
+      disconnectSocket();
     };
-  }, [socket]);
+  }, []);
 
   // Show loading screen while checking authentication
   if (isLoading) {
@@ -355,16 +390,26 @@ function App() {
     return <Login />;
   }
 
-  // Show dashboard if authenticated
+  const logout = () => {
+    authLogout();
+    disconnectSocket();
+  };
+
+  const refreshChart = () => {
+    // Placeholder function for chart refresh
+    // This could be implemented to refresh historical data
+  };
+
+  // Authenticated user sees the dashboard
   return (
-    <Dashboard 
+    <Dashboard
       data={trafficData}
       history={history}
       isProcessing={isProcessing}
       onStartProcessing={startProcessing}
       onStopProcessing={stopProcessing}
-      onRefreshChart={loadChartData}
-      onLogout={authLogout}
+      onRefreshChart={refreshChart}
+      onLogout={logout}
     />
   );
 }

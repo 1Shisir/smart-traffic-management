@@ -6,30 +6,32 @@ import ChartControls from './ChartControls.jsx';
 import { FaCar, FaBus, FaTruck, FaMotorcycle, FaEye, FaClock } from 'react-icons/fa';
 
 const Dashboard = ({ data, history, isProcessing, onStartProcessing, onStopProcessing, onRefreshChart, onLogout }) => {
-  // Local state to prevent double-clicks
+  // Default data structure to prevent undefined errors
+  const defaultData = {
+    count: 0,
+    car: 0,
+    bus: 0,
+    truck: 0,
+    motorcycle: 0,
+    traffic_light: 'red',
+    light_duration: 30,
+    junction: 'Main St & 1st Ave',
+    time: new Date().toLocaleTimeString()
+  };
+
+  // Use provided data or default data
+  const trafficData = data || defaultData;
+
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [lastClickTime, setLastClickTime] = useState(0);
   
   // Chart settings state
   const [chartType, setChartType] = useState('bar'); // 'bar' or 'line'
   const [viewMode, setViewMode] = useState('breakdown'); // 'total' or 'breakdown'
   
-  // Debug: Log when data prop changes
-  useEffect(() => {
-    console.log('🎛️ ========== DASHBOARD DATA UPDATED ==========');
-    console.log('🎛️ Received data prop:', data);
-    console.log('🎛️ Vehicle counts - car:', data?.car, 'bus:', data?.bus, 'truck:', data?.truck, 'motorcycle:', data?.motorcycle);
-    console.log('🎛️ Total count:', data?.count);
-    console.log('🎛️ Traffic light state:', data?.traffic_light);
-    console.log('🎛️ Junction:', data?.junction);
-    console.log('🎛️ Time:', data?.time);
-    console.log('🎛️ Processing state:', isProcessing);
-    console.log('🎛️ =============================================');
-  }, [data, isProcessing]);
-  
   // Clear button states when processing state changes
   useEffect(() => {
-    console.log('📊 Dashboard: isProcessing changed to:', isProcessing);
     if (isProcessing) {
       // Processing started - clear the starting state
       setIsStarting(false);
@@ -39,68 +41,66 @@ const Dashboard = ({ data, history, isProcessing, onStartProcessing, onStopProce
     }
   }, [isProcessing]);
   
-  // Debug button states
-  useEffect(() => {
-    console.log('🔘 Dashboard Button States:', {
-      isProcessing,
-      isStarting,
-      isStopping,
-      startButtonDisabled: isProcessing || isStarting,
-      stopButtonDisabled: !isProcessing || isStopping
-    });
-  }, [isProcessing, isStarting, isStopping]);
-  
   const handleStartClick = async () => {
+    // Debouncing: prevent clicks within 1 second of each other
+    const now = Date.now();
+    if (now - lastClickTime < 1000) {
+      console.log('🔘 Dashboard: Click ignored - too soon after last click');
+      return;
+    }
+    setLastClickTime(now);
+    
     if (isStarting || isProcessing) return;
     
-    console.log('🚀 Dashboard: Starting video processing...');
-    console.log('🚀 Dashboard: isProcessing before:', isProcessing);
     setIsStarting(true);
+    console.log('🔘 Dashboard: Start button clicked');
     
     try {
       const success = await onStartProcessing();
-      console.log('🚀 Dashboard: Start processing result:', success);
       if (!success) {
-        console.error('❌ Start processing failed');
         setIsStarting(false);
+        console.log('❌ Dashboard: Start processing failed');
       } else {
-        // Keep isStarting true until backend confirms or timeout
+        console.log('✅ Dashboard: Start processing initiated');
+        // Shorter timeout since polling will update isProcessing when backend confirms
         setTimeout(() => {
-          console.log('⏰ Dashboard: Start button timeout, clearing isStarting');
           setIsStarting(false);
-        }, 3000);
+        }, 1500);
       }
     } catch (error) {
-      console.error('❌ Start processing error:', error);
+      console.error('❌ Dashboard: Start processing error:', error);
       setIsStarting(false);
     }
   };
 
   const handleStopClick = async () => {
+    // Debouncing: prevent clicks within 1 second of each other
+    const now = Date.now();
+    if (now - lastClickTime < 1000) {
+      console.log('🔘 Dashboard: Click ignored - too soon after last click');
+      return;
+    }
+    setLastClickTime(now);
+    
     if (isStopping || !isProcessing) return;
     
-    console.log('🛑 Dashboard: Stopping video processing...');
-    console.log('🛑 Dashboard: isProcessing before:', isProcessing);
     setIsStopping(true);
+    console.log('🔘 Dashboard: Stop button clicked');
     
     try {
       const success = await onStopProcessing();
-      console.log('🛑 Dashboard: Stop processing result:', success);
       if (!success) {
-        console.error('❌ Stop processing failed');
         setIsStopping(false);
+        console.log('❌ Dashboard: Stop processing failed');
       } else {
-        // Success! Keep isStopping true until backend confirms processing stopped
-        console.log('✅ Dashboard: Stop request sent successfully');
-        // Don't clear isStopping here - let the parent component handle it via Socket.IO events
-        // The App component will receive 'processing_stopped' event and update isProcessing
+        console.log('✅ Dashboard: Stop processing initiated');
+        // Shorter timeout since polling will detect when processing actually stops
         setTimeout(() => {
-          console.log('⏰ Dashboard: Stop button timeout, clearing isStopping');
           setIsStopping(false);
-        }, 3000);
+        }, 1500);
       }
     } catch (error) {
-      console.error('❌ Stop processing error:', error);
+      console.error('❌ Dashboard: Stop processing error:', error);
       setIsStopping(false);
     }
   };
@@ -141,7 +141,11 @@ const Dashboard = ({ data, history, isProcessing, onStartProcessing, onStopProce
               {/* Processing Controls */}
               <div className="flex space-x-2">
                 <button
-                  onClick={handleStartClick}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleStartClick();
+                  }}
                   disabled={isProcessing || isStarting}
                   className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
                     (isProcessing || isStarting)
@@ -153,7 +157,11 @@ const Dashboard = ({ data, history, isProcessing, onStartProcessing, onStopProce
                 </button>
                 
                 <button
-                  onClick={handleStopClick}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleStopClick();
+                  }}
                   disabled={!isProcessing || isStopping}
                   className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
                     (!isProcessing || isStopping)
@@ -222,16 +230,16 @@ const Dashboard = ({ data, history, isProcessing, onStartProcessing, onStopProce
               <div className="bg-gradient-to-r from-blue-400 to-blue-50 rounded-lg p-4 mb-4">
                 <div className="text-center">
                   <p className="text-sm opacity-90">Total Vehicles</p>
-                  <p className="text-3xl font-bold">{data.count}</p>
+                  <p className="text-3xl font-bold">{trafficData.count}</p>
                 </div>
               </div>
 
               {/* Individual Counts */}
               <div className="grid grid-cols-2 gap-3">
-                <VehicleCountCard type="car" count={data.car} icon={vehicleIcons.car} />
-                <VehicleCountCard type="bus" count={data.bus} icon={vehicleIcons.bus} />
-                <VehicleCountCard type="truck" count={data.truck} icon={vehicleIcons.truck} />
-                <VehicleCountCard type="motorcycle" count={data.motorcycle} icon={vehicleIcons.motorcycle} />
+                <VehicleCountCard type="car" count={trafficData.car} icon={vehicleIcons.car} />
+                <VehicleCountCard type="bus" count={trafficData.bus} icon={vehicleIcons.bus} />
+                <VehicleCountCard type="truck" count={trafficData.truck} icon={vehicleIcons.truck} />
+                <VehicleCountCard type="motorcycle" count={trafficData.motorcycle} icon={vehicleIcons.motorcycle} />
               </div>
 
               {/* Junction & Time Info */}
@@ -239,11 +247,11 @@ const Dashboard = ({ data, history, isProcessing, onStartProcessing, onStopProce
                 <div className="flex items-center justify-between text-sm">
                   <div>
                     <span className="text-gray-600">Junction:</span>
-                    <span className="ml-2 font-medium">{data.junction}</span>
+                    <span className="ml-2 font-medium">{trafficData.junction}</span>
                   </div>
                   <div className="flex items-center">
                     <FaClock className="text-gray-400 mr-1" />
-                    <span className="text-gray-600">{data.time}</span>
+                    <span className="text-gray-600">{trafficData.time}</span>
                   </div>
                 </div>
               </div>
@@ -253,9 +261,9 @@ const Dashboard = ({ data, history, isProcessing, onStartProcessing, onStopProce
           {/* Middle Column - Traffic Light */}
           <div className="lg:col-span-1">
             <TrafficLight 
-              state={data.traffic_light} 
-              duration={data.light_duration}
-              vehicleCount={data.count}
+              state={trafficData.traffic_light} 
+              duration={trafficData.light_duration}
+              vehicleCount={trafficData.count}
               isProcessing={isProcessing}
             />
           </div>

@@ -9,7 +9,7 @@ import logging
 from datetime import datetime
 from typing import Tuple, Optional
 
-from flask import Flask, redirect, url_for
+from flask import Flask, redirect, url_for, request
 from flask_socketio import SocketIO, disconnect
 from flask_jwt_extended import JWTManager, get_jwt_identity, verify_jwt_in_request
 from flask_cors import CORS
@@ -62,7 +62,7 @@ def create_app(config_name: Optional[str] = None) -> Tuple[Flask, SocketIO]:
     
     # Initialize CORS
     CORS(app, 
-         origins=['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'],  # Allow React dev server
+         origins=['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000', 'http://127.0.0.1:5173'],  # Allow React dev server
          supports_credentials=True,  # Allow cookies/credentials
          allow_headers=['Content-Type', 'Authorization'],
          methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
@@ -76,7 +76,7 @@ def create_app(config_name: Optional[str] = None) -> Tuple[Flask, SocketIO]:
     # Initialize extensions
     socketio = SocketIO(
         app, 
-        cors_allowed_origins=app.config.get('CORS_ORIGINS', '*'),
+        cors_allowed_origins="*",  # Allow all origins for debugging
         cookie=True,  # Enable cookie-based authentication
         logger=True,
         engineio_logger=True
@@ -99,40 +99,20 @@ def create_app(config_name: Optional[str] = None) -> Tuple[Flask, SocketIO]:
     # Setup SocketIO handlers
     @socketio.on('connect')
     def handle_connect(auth):
-        """Handle WebSocket connection with JWT verification."""
+        """Handle WebSocket connection without authentication."""
         try:
-            # Check if token is provided in auth object
-            if auth and 'token' in auth:
-                # Verify the token manually
-                from flask_jwt_extended import decode_token
-                token = auth['token']
-                decoded_token = decode_token(token)
-                user = decoded_token['sub']  # Subject contains the user identity
-                logger.info(f"User {user} connected via WebSocket with token")
-            else:
-                # Try to verify JWT from cookies/headers
-                verify_jwt_in_request()
-                user = get_jwt_identity()
-                logger.info(f"User {user} connected via WebSocket")
+            client_id = request.sid
+            logger.info(f"Client {client_id} connected via WebSocket")
             
-            # Join user to a room for targeted messaging
-            from flask_socketio import join_room
-            join_room(f"user_{user}")
-            
-            # Send connection confirmation
+            # Send connection confirmation to all clients
             socketio.emit('connection_status', {
                 'status': 'connected',
-                'user': user,
+                'client_id': client_id,
                 'timestamp': datetime.utcnow().isoformat()
-            })
+            }, broadcast=True)
             
         except Exception as e:
-            logger.warning(f"WebSocket connection rejected: {e}")
-            # Don't disconnect immediately, let frontend handle authentication
-            socketio.emit('auth_required', {
-                'message': 'Authentication required',
-                'redirect': '/login'
-            })
+            logger.error(f"WebSocket connection error: {e}")
     
     @socketio.on('disconnect')
     def handle_disconnect(reason=None):

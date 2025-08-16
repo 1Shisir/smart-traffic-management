@@ -10,6 +10,7 @@ import {
   Tooltip,
   Legend,
   TimeScale,
+  Filler,
 } from 'chart.js';
 import { Bar, Line } from 'react-chartjs-2';
 import 'chartjs-adapter-date-fns';
@@ -24,7 +25,8 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  TimeScale
+  TimeScale,
+  Filler
 );
 
 const TrafficChart = ({ data, chartType = 'bar', showVehicleTypes = true }) => {
