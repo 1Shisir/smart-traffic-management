@@ -3,7 +3,8 @@ import TrafficLight from './TrafficLight.jsx';
 import VideoPreview from './VideoPreview.jsx';
 import TrafficChart from './TrafficChart.jsx';
 import ChartControls from './ChartControls.jsx';
-import { FaCar, FaBus, FaTruck, FaMotorcycle, FaEye, FaClock } from 'react-icons/fa';
+import AWSStorageManager from './AWSStorageManager.jsx';
+import { FaCar, FaBus, FaTruck, FaMotorcycle, FaEye, FaClock, FaCloud, FaChartLine } from 'react-icons/fa';
 
 const Dashboard = ({ data, history, isProcessing, isPolling, onStartProcessing, onStopProcessing, onRefreshChart, onLogout }) => {
   // Default data structure to prevent undefined errors
@@ -29,6 +30,9 @@ const Dashboard = ({ data, history, isProcessing, isPolling, onStartProcessing, 
   // Chart settings state
   const [chartType, setChartType] = useState('bar'); // 'bar' or 'line'
   const [viewMode, setViewMode] = useState('breakdown'); // 'total' or 'breakdown'
+  
+  // Tab state
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' or 'storage'
   
   // Clear button states when processing state changes
   useEffect(() => {
@@ -226,6 +230,40 @@ const Dashboard = ({ data, history, isProcessing, isPolling, onStartProcessing, 
           </div>
         </div>
 
+        {/* Tab Navigation */}
+        <div className="mb-8">
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8">
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'dashboard'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <FaChartLine className="inline mr-2" />
+                Traffic Dashboard
+              </button>
+              <button
+                onClick={() => setActiveTab('storage')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'storage'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <FaCloud className="inline mr-2" />
+                AWS Storage
+              </button>
+            </nav>
+          </div>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'dashboard' && (
+        <div>
+
         {/* Real-time Stats Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           {/* Left Column - Vehicle Counts */}
@@ -306,6 +344,14 @@ const Dashboard = ({ data, history, isProcessing, isPolling, onStartProcessing, 
             showVehicleTypes={viewMode === 'breakdown'}
           />
         </div>
+        </div>
+        )}
+
+        {/* AWS Storage Tab */}
+        {activeTab === 'storage' && (
+          <AWSStorageManager />
+        )}
+
       </main>
     </div>
   );

@@ -203,9 +203,11 @@ def _register_blueprints(app: Flask) -> None:
     """Register application blueprints."""
     try:
         from app.routes.api import api
+        from app.routes.aws_routes import aws_bp
         from app.utils.health import health
         
         app.register_blueprint(api, url_prefix='/api')
+        app.register_blueprint(aws_bp)  # AWS routes already have /api/aws prefix
         app.register_blueprint(health)
         
         logger.info("Blueprints registered successfully")

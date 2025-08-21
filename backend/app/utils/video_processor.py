@@ -11,6 +11,7 @@ from ultralytics import YOLO
 from app.models.traffic_data import TrafficData
 from app.config import Config
 from .realtime_polling import write_realtime_data, read_realtime_data
+from ..services.aws_service import aws_storage
 
 # Global variables for process control
 processing_active = False
@@ -469,6 +470,45 @@ def process_video(session, junction="main_junction", video_path=None, user_room=
                     
                 except Exception as write_error:
                     logging.warning(f"📝 ⚠️ Failed to write real-time data: {write_error}")
+                
+                # ✅ AWS BACKUP (if enabled)
+                try:
+                    if aws_storage.is_available():
+                        # Save processed frame to AWS every 10 frames to avoid overwhelming
+                        if frame_count % 10 == 0 and annotated is not None:
+                            # Encode frame as JPEG
+                            _, buffer = cv2.imencode('.jpg', annotated)
+                            frame_data = buffer.tobytes()
+                            
+                            # Upload to S3
+                            frame_id = f"{junction}_{timestamp.strftime('%Y%m%d_%H%M%S')}_frame_{frame_count}"
+                            s3_url = aws_storage.upload_processed_frame(frame_data, frame_id)
+                            
+                            if s3_url:
+                                logging.info(f"☁️ Frame {frame_count} backed up to AWS S3")
+                            
+                        # Save analytics data every 50 frames
+                        if frame_count % 50 == 0:
+                            analytics_data = {
+                                'session_id': f"{junction}_{timestamp.strftime('%Y%m%d_%H%M')}",
+                                'frame_range': f"{frame_count-49}-{frame_count}",
+                                'analytics': update_data,
+                                'detection_summary': {
+                                    'total_vehicles': total_count,
+                                    'class_distribution': class_counts,
+                                    'traffic_light_state': light_state,
+                                    'processing_timestamp': timestamp.isoformat()
+                                }
+                            }
+                            
+                            analytics_filename = f"analytics_{frame_id}.json"
+                            s3_url = aws_storage.upload_analytics_data(analytics_data, analytics_filename)
+                            
+                            if s3_url:
+                                logging.info(f"☁️ Analytics data backed up to AWS S3")
+                                
+                except Exception as aws_error:
+                    logging.warning(f"☁️ ⚠️ AWS backup failed: {aws_error}")
                 
                 # ✅ OPTIONAL: Keep Socket.IO as backup (but polling is primary)
                 if socketio:
