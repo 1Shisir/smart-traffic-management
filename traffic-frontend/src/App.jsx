@@ -4,6 +4,7 @@ import { useAuth } from './context/AuthContext.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
+import NetworkStatus from './components/NetworkStatus.jsx';
 import './App.css';
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
   const [history, setHistory] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pollingInterval, setPollingInterval] = useState(null);
+  const [networkStatus, setNetworkStatus] = useState({ backend: true, network: true });
 
   // Load initial data when authenticated and connect socket
   useEffect(() => {
@@ -98,7 +100,17 @@ function App() {
       await loadChartData();
       
     } catch (error) {
-      await generateSampleData();
+      console.error('Failed to load initial data:', error);
+    }
+  };
+
+  // Handle network status changes
+  const handleNetworkStatusChange = (status) => {
+    setNetworkStatus(status);
+    
+    // If backend comes back online, reload data
+    if (status.backend && isAuthenticated) {
+      loadInitialData();
     }
   };
 
@@ -398,12 +410,22 @@ function App() {
 
   // Show loading screen while checking authentication
   if (isLoading) {
-    return <LoadingScreen />;
+    return (
+      <>
+        <NetworkStatus onStatusChange={handleNetworkStatusChange} />
+        <LoadingScreen />
+      </>
+    );
   }
 
   // Show login page if not authenticated
   if (!isAuthenticated) {
-    return <Login />;
+    return (
+      <>
+        <NetworkStatus onStatusChange={handleNetworkStatusChange} />
+        <Login />
+      </>
+    );
   }
 
   const logout = () => {
@@ -418,16 +440,20 @@ function App() {
 
   // Authenticated user sees the dashboard
   return (
-    <Dashboard
-      data={trafficData}
-      history={history}
-      isProcessing={isProcessing}
-      isPolling={pollingInterval !== null}
-      onStartProcessing={startProcessing}
-      onStopProcessing={stopProcessing}
-      onRefreshChart={refreshChart}
-      onLogout={logout}
-    />
+    <>
+      <NetworkStatus onStatusChange={handleNetworkStatusChange} />
+      <Dashboard
+        data={trafficData}
+        history={history}
+        isProcessing={isProcessing}
+        isPolling={pollingInterval !== null}
+        networkStatus={networkStatus}
+        onStartProcessing={startProcessing}
+        onStopProcessing={stopProcessing}
+        onRefreshChart={refreshChart}
+        onLogout={logout}
+      />
+    </>
   );
 }
 

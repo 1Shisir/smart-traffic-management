@@ -6,7 +6,7 @@ import ChartControls from './ChartControls.jsx';
 import AWSStorageManager from './AWSStorageManager.jsx';
 import { FaCar, FaBus, FaTruck, FaMotorcycle, FaEye, FaClock, FaCloud, FaChartLine } from 'react-icons/fa';
 
-const Dashboard = ({ data, history, isProcessing, isPolling, onStartProcessing, onStopProcessing, onRefreshChart, onLogout }) => {
+const Dashboard = ({ data, history, isProcessing, isPolling, networkStatus, onStartProcessing, onStopProcessing, onRefreshChart, onLogout }) => {
   // Default data structure to prevent undefined errors
   const defaultData = {
     count: 0,
@@ -128,8 +128,11 @@ const Dashboard = ({ data, history, isProcessing, isPolling, onStartProcessing, 
     </div>
   );
 
+  // Check if network status bar is shown
+  const isNetworkStatusVisible = networkStatus && (!networkStatus.backend || !networkStatus.network);
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className={`min-h-screen bg-gray-50 ${isNetworkStatusVisible ? 'pt-16' : ''}`}>
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

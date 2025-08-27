@@ -1,1 +1,1 @@
-{"processing_active": false, "status": "stopped", "message": "Video processing stopped", "timestamp": "2025-08-28T00:33:21.354103", "last_update": "2025-08-28T00:33:21.354106"}
+{"timestamp": "2025-08-28T00:57:21.607450", "car_count": 3, "truck_count": 0, "bus_count": 0, "motorcycle_count": 0, "total_vehicles": 3, "frame_count": 145, "total_frames": 717, "traffic_light_state": "green", "traffic_light_duration": 30, "processing_active": true, "junction": "main_junction", "last_update": "2025-08-28T00:57:21.607453"}
