@@ -16,6 +16,8 @@ The Smart Traffic Management System is an advanced AI-powered platform that prov
 - **Professional Dashboard**: Modern, responsive web interface for monitoring and control
 - **Secure Authentication**: JWT-based user authentication with role-based access
 - **Database Integration**: SQLite database for reliable data storage and retrieval
+- **AWS Cloud Storage**: Optional S3 integration for video and data backup
+- **Comprehensive Testing**: 9 automated tests covering all core services
 
 ---
 
@@ -28,6 +30,8 @@ The Smart Traffic Management System is an advanced AI-powered platform that prov
 - **Authentication**: JWT (JSON Web Tokens) with bcrypt password hashing
 - **Video Processing**: OpenCV for video capture and frame processing
 - **Real-Time Updates**: Flask-SocketIO for WebSocket communication
+- **Cloud Storage**: AWS S3 integration for video and data backup
+- **Testing**: Comprehensive pytest-based test suite with 9 automated tests
 
 ### Frontend (React)
 - **Framework**: React 18 with Vite for fast development
@@ -175,6 +179,87 @@ npm run dev
 
 ---
 
+## 🧪 Testing Framework
+
+### Automated Test Suite
+The system includes a comprehensive test suite with **9 automated tests** covering all core services:
+
+#### Test Coverage
+- **Authentication Service (3 tests)**
+  - ✅ Successful user authentication with valid credentials
+  - ✅ Authentication failure with invalid credentials  
+  - ✅ Input validation for empty username/password
+
+- **Traffic Processing Service (3 tests)**
+  - ✅ Successful traffic data retrieval with pagination
+  - ✅ Junction-based filtering functionality
+  - ✅ Empty dataset handling and edge cases
+
+- **AWS Storage Service (3 tests)**
+  - ✅ AWS S3 client initialization and configuration
+  - ✅ Graceful handling of missing AWS credentials
+  - ✅ Service availability and health checks
+
+### Running Tests
+
+#### Prerequisites
+```powershell
+# Navigate to backend directory
+cd c:\Users\USER\OneDrive\Desktop\smart-traffic-system\backend
+
+# Activate virtual environment (if not already active)
+.\venv\Scripts\Activate.ps1
+```
+
+#### Test Execution
+```powershell
+# Run all tests
+python -m pytest tests/ -v
+
+# Run specific service tests
+python -m pytest tests/test_auth_service.py -v
+python -m pytest tests/test_traffic_service.py -v
+python -m pytest tests/test_aws_service.py -v
+
+# Run with coverage report
+python -m pytest tests/ --cov=app --cov-report=html
+```
+
+#### Expected Output
+```
+============================================== test session starts ===============================================
+platform win32 -- Python 3.13.5, pytest-8.4.1, pluggy-1.6.0
+collected 9 items
+
+tests/test_auth_service.py::TestAuthService::test_authenticate_user_success PASSED                          [ 11%]
+tests/test_auth_service.py::TestAuthService::test_authenticate_user_invalid_credentials PASSED              [ 22%]
+tests/test_auth_service.py::TestAuthService::test_authenticate_user_empty_credentials PASSED                [ 33%]
+tests/test_aws_service.py::TestAWSStorageService::test_aws_service_initialization_success PASSED            [ 44%]
+tests/test_aws_service.py::TestAWSStorageService::test_aws_service_initialization_no_credentials PASSED     [ 55%]
+tests/test_aws_service.py::TestAWSStorageService::test_is_available PASSED                                  [ 66%]
+tests/test_traffic_service.py::TestTrafficDataService::test_get_traffic_data_success PASSED                 [ 77%]
+tests/test_traffic_service.py::TestTrafficDataService::test_get_traffic_data_with_junction_filter PASSED    [ 88%]
+tests/test_traffic_service.py::TestTrafficDataService::test_get_traffic_data_empty_result PASSED            [100%]
+
+=============================================== 9 passed in 2.62s ================================================
+```
+
+### Testing Features
+- **Mock-based Testing**: Uses unittest.mock to avoid external dependencies
+- **Service Isolation**: Each service tested independently with proper mocking
+- **Edge Case Coverage**: Includes tests for error conditions and edge cases
+- **Fast Execution**: All tests complete in under 3 seconds
+- **CI/CD Ready**: Suitable for automated testing pipelines
+
+### Test File Structure
+- `tests/conftest.py` - Test configuration and shared fixtures
+- `tests/test_auth_service.py` - Authentication service tests
+- `tests/test_traffic_service.py` - Traffic data processing tests  
+- `tests/test_aws_service.py` - AWS storage integration tests
+- `tests/HOW_TO_RUN_TESTS.md` - Detailed testing guide
+
+---
+
 ## 🔧 Configuration Options
 
 ### Environment Variables (.env file)
@@ -196,6 +281,12 @@ VIDEO_PATH=traffic_sample1.mp4
 YOLO_MODEL=yolov8n.pt
 DETECTION_THRESHOLD=0.5
 TRAFFIC_LIGHT_THRESHOLD=12
+
+# AWS Configuration (Optional)
+AWS_ACCESS_KEY_ID=your_aws_access_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+AWS_REGION=ap-southeast-2
+AWS_S3_BUCKET_NAME=smart-traffic-system-bucket
 
 # Logging
 LOG_LEVEL=INFO
@@ -220,6 +311,12 @@ LOG_FILE=app.log
 - `GET /api/current-status` - Get current system status
 - `POST /api/generate-sample-data` - Generate test data
 
+### AWS Storage Endpoints
+- `GET /api/aws/status` - Get AWS service status and statistics
+- `POST /api/aws/upload/video` - Upload video files to S3
+- `GET /api/aws/files` - List stored files in S3
+- `DELETE /api/aws/files/<filename>` - Delete files from S3
+
 ### Video Processing
 - `GET /api/video-feed` - Live video frame endpoint
 
@@ -240,7 +337,8 @@ LOG_FILE=app.log
 1. **Backend Development**: Modify Python files in `/backend/app/`
 2. **Frontend Development**: Edit React components in `/traffic-frontend/src/`
 3. **Database Changes**: Update models in `/backend/app/models/`
-4. **Testing**: Use demo credentials and sample video data
+4. **Testing**: Comprehensive test suite with 9 automated tests covering all core services
+5. **Quality Assurance**: Run tests before deployment using `python -m pytest tests/ -v`
 
 ### Production Deployment
 1. **Environment Setup**: Configure production environment variables
@@ -259,7 +357,14 @@ smart-traffic-system/
 │   │   ├── services/       # Business logic
 │   │   ├── utils/          # Utility functions
 │   │   └── config.py       # Configuration
+│   ├── tests/              # Comprehensive test suite
+│   │   ├── conftest.py     # Test configuration
+│   │   ├── test_auth_service.py      # Authentication tests
+│   │   ├── test_traffic_service.py   # Traffic processing tests
+│   │   ├── test_aws_service.py       # AWS integration tests
+│   │   └── HOW_TO_RUN_TESTS.md       # Testing guide
 │   ├── main.py             # Application entry point
+│   ├── manage.py           # CLI management commands
 │   └── requirements.txt    # Python dependencies
 ├── traffic-frontend/        # React frontend
 │   ├── src/
@@ -269,6 +374,8 @@ smart-traffic-system/
 │   │   └── App.jsx         # Main application
 │   ├── package.json        # Node dependencies
 │   └── vite.config.js      # Vite configuration
+├── AWS_SETUP.md            # AWS integration guide
+├── SYSTEM_DOCUMENTATION.md # This comprehensive guide
 └── README.md               # Project documentation
 ```
 
@@ -302,6 +409,18 @@ smart-traffic-system/
 - Verify username/password combination
 - Check network connectivity
 
+**Testing Issues**
+- Ensure virtual environment is activated
+- Verify pytest is installed: `pip install pytest`
+- Check Python path in test configuration
+- Run tests from backend directory: `cd backend && python -m pytest tests/ -v`
+
+**AWS Integration Problems**
+- Verify AWS credentials in environment variables
+- Check S3 bucket permissions and region
+- Ensure AWS services are available in your region
+- Review AWS_SETUP.md for detailed configuration
+
 ### System Requirements
 - **CPU**: Intel i5 or equivalent (i7 recommended for video processing)
 - **RAM**: 8GB minimum (16GB recommended)
@@ -317,10 +436,16 @@ smart-traffic-system/
 - **Multiple Camera Support**: Monitor multiple junctions simultaneously
 - **Advanced Analytics**: Traffic flow predictions and pattern analysis
 - **Mobile App**: iOS/Android companion app
-- **Cloud Integration**: AWS/Azure cloud deployment
+- **Enhanced Cloud Integration**: Advanced AWS features and auto-scaling
 - **AI Improvements**: Advanced vehicle classification and tracking
 - **Report Generation**: Automated traffic reports and insights
 - **Integration APIs**: Third-party traffic system integration
+- **Real-time Alerts**: Notification system for traffic anomalies
+
+### Recently Added Features
+- ✅ **AWS S3 Storage Integration**: Video and data backup to cloud storage
+- ✅ **Comprehensive Testing Suite**: 9 automated tests covering all core services
+- ✅ **Enhanced Documentation**: Complete system documentation and guides
 
 ### Performance Optimizations
 - **Distributed Processing**: Multi-camera load balancing

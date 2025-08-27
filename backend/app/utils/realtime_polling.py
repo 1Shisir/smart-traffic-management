@@ -3,7 +3,6 @@ Simple polling-based real-time updates API
 This approach is much more reliable than Socket.IO for real-time data
 """
 
-from flask import jsonify
 from datetime import datetime
 import json
 import os
@@ -62,8 +61,6 @@ def read_realtime_data():
 
 def get_default_data():
     """Get default realtime data structure"""
-def get_default_data():
-    """Get default realtime data structure"""
     return {
         'junction': 'Main St & 1st Ave',
         'total_vehicles': 0,
@@ -78,16 +75,3 @@ def get_default_data():
         'status': 'inactive',
         'last_update': datetime.now().isoformat()
     }
-
-# Add this endpoint to your API routes
-def add_polling_endpoints(api):
-    """Add polling endpoints to the API blueprint"""
-    
-    @api.route('/realtime-status')
-    def get_realtime_status():
-        """Get current real-time status for polling"""
-        try:
-            data = read_realtime_data()
-            return jsonify(data)
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
