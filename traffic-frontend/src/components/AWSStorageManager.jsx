@@ -68,6 +68,83 @@ const AWSStorageManager = () => {
     }
   };
 
+  const downloadFile = async (s3Key, fileName) => {
+    try {
+      // Get presigned URL for secure download
+      const response = await fetch(`/api/aws/files/${encodeURIComponent(s3Key)}/url?expiration=3600`);
+      const data = await response.json();
+      
+      if (data.success) {
+        // Open download in new tab
+        const link = document.createElement('a');
+        link.href = data.presigned_url;
+        link.download = fileName || s3Key.split('/').pop();
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer'; // Security best practice
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        alert(`Download failed: ${data.error}`);
+      }
+    } catch (error) {
+      alert(`Download error: ${error.message}`);
+    }
+  };
+
+  const exportAnalytics = async () => {
+    try {
+      // Get current traffic data for analytics export
+      const response = await fetch('/api/data?limit=100');
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        // Prepare analytics data
+        const analyticsData = {
+          export_date: new Date().toISOString(),
+          total_records: data.length,
+          date_range: {
+            from: data[data.length - 1].timestamp,
+            to: data[0].timestamp
+          },
+          summary: {
+            total_vehicles: data.reduce((sum, record) => sum + (record.total_count || 0), 0),
+            total_cars: data.reduce((sum, record) => sum + (record.car_count || 0), 0),
+            total_buses: data.reduce((sum, record) => sum + (record.bus_count || 0), 0),
+            total_trucks: data.reduce((sum, record) => sum + (record.truck_count || 0), 0),
+            total_motorcycles: data.reduce((sum, record) => sum + (record.motorcycle_count || 0), 0),
+            peak_hour: data.reduce((peak, record) => 
+              (record.total_count || 0) > (peak.total_count || 0) ? record : peak, data[0]
+            )
+          },
+          traffic_data: data
+        };
+
+        // Upload analytics to S3
+        const uploadResponse = await fetch('/api/aws/upload/analytics', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(analyticsData)
+        });
+
+        const uploadData = await uploadResponse.json();
+        if (uploadData.success) {
+          alert('Analytics exported to S3 successfully!');
+          loadFiles(); // Refresh file list
+          loadAWSStatus(); // Refresh stats
+        } else {
+          alert(`Analytics export failed: ${uploadData.error}`);
+        }
+      } else {
+        alert('No traffic data available to export');
+      }
+    } catch (error) {
+      alert(`Analytics export error: ${error.message}`);
+    }
+  };
+
   const deleteFile = async (s3Key) => {
     if (!confirm(`Are you sure you want to delete ${s3Key}?`)) return;
 
@@ -362,17 +439,17 @@ const AWSStorageManager = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex space-x-2">
-                        <a
-                          href={file.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:text-blue-900"
+                        <button
+                          onClick={() => downloadFile(file.key, file.key.split('/').pop())}
+                          className="text-blue-600 hover:text-blue-900 p-1"
+                          title="Download file"
                         >
                           <FaDownload />
-                        </a>
+                        </button>
                         <button
                           onClick={() => deleteFile(file.key)}
-                          className="text-red-600 hover:text-red-900"
+                          className="text-red-600 hover:text-red-900 p-1"
+                          title="Delete file"
                         >
                           <FaTrash />
                         </button>
@@ -415,11 +492,30 @@ const AWSStorageManager = () => {
           </div>
 
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <h3 className="text-lg font-medium text-green-900 mb-2">Automatic Backups</h3>
-            <p className="text-green-700 mb-2">
+            <h3 className="text-lg font-medium text-green-900 mb-2">Analytics Export</h3>
+            <p className="text-green-700 mb-4">
+              Export current traffic analytics data to AWS S3 for backup and analysis.
+            </p>
+            <button
+              onClick={exportAnalytics}
+              disabled={!awsStatus?.aws_available}
+              className={`flex items-center px-4 py-2 rounded-lg font-medium mb-4 ${
+                awsStatus?.aws_available
+                  ? 'bg-green-500 text-white hover:bg-green-600'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              <FaChartBar className="mr-2" />
+              Export Analytics
+            </button>
+          </div>
+
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <h3 className="text-lg font-medium text-yellow-900 mb-2">Automatic Backups</h3>
+            <p className="text-yellow-700 mb-2">
               The system automatically backs up:
             </p>
-            <ul className="text-green-700 text-sm space-y-1">
+            <ul className="text-yellow-700 text-sm space-y-1">
               <li>• Processed frames every 10 frames during video processing</li>
               <li>• Analytics data every 50 frames during video processing</li>
               <li>• All data includes timestamps and metadata for easy retrieval</li>
