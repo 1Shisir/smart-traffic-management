@@ -65,6 +65,12 @@ The dashboard is divided into several key sections:
 - **Vehicle Annotations**: Colored boxes around detected vehicles
 - **Processing Controls**: Play/pause/stop functionality
 
+### 6. **AI Detection Video** (New Feature)
+- **Detection Video Access**: Button below live video feed
+- **Frame Preview**: View individual frames with detection boundaries
+- **Full Video Download**: Process and download complete video with AI annotations
+- **Progress Tracking**: Monitor video processing status
+
 ---
 
 ## 🎮 Core Functions
@@ -102,6 +108,32 @@ The system automatically:
 - **Adjusts Signal Timing**: Optimizes green/red light duration
 - **Reduces Wait Times**: Minimizes traffic congestion
 - **Provides Recommendations**: Suggests optimal timing settings
+
+### Using AI Vehicle Detection Video
+
+**Accessing the Feature**:
+1. Look for **"🤖 View AI Detection Video"** button below the live video feed
+2. Click the button to navigate to the AI Detection Video page
+
+**Preview Detection on Single Frames**:
+1. **Enter Frame Number**: Input the specific frame you want to analyze
+2. **Load Preview**: Click "Load Preview Frame" to see detection results
+3. **View Results**: Observe vehicle detection boundaries and counts
+4. **Frame Navigation**: Try different frame numbers to explore the video
+
+**Download Full Video with Detection**:
+1. **Start Processing**: Click "📥 Download Video with Detection" button
+2. **Wait for Processing**: AI will analyze every frame (this may take several minutes)
+3. **Progress Monitoring**: Watch for processing status updates
+4. **Automatic Download**: Processed video will download when complete
+5. **File Format**: Video saves as MP4/AVI with detection overlays
+
+**What You'll Get in the Processed Video**:
+- ✅ **Vehicle Boundaries**: Colored boxes around all detected vehicles
+- ✅ **Vehicle Counts**: Real-time count display on each frame
+- ✅ **Detection Confidence**: Accuracy percentages for each detection
+- ✅ **Frame Information**: Frame number and total frame count
+- ✅ **Vehicle Categories**: Separate counts for cars, buses, trucks, motorcycles
 
 ---
 
@@ -172,6 +204,22 @@ The system automatically:
 - Check video format compatibility (MP4 recommended)
 - Restart video processing
 
+#### AI Detection Video Processing Fails
+**Problem**: Download fails or processing errors
+**Solution**:
+- Check available disk space (processing requires temporary storage)
+- Ensure stable internet connection during processing
+- Try processing a shorter video segment first
+- Contact administrator if YOLO model fails to load
+
+#### Detection Video Download Issues
+**Problem**: Processed video fails to download or is corrupted
+**Solution**:
+- Clear browser downloads and try again
+- Check browser permissions for file downloads
+- Ensure sufficient storage space on local device
+- Try using a different browser if issues persist
+
 #### No Vehicle Detection
 **Problem**: Video plays but no detection boxes appear
 **Solution**:
@@ -194,6 +242,9 @@ The system automatically:
 | "Processing already active" | Another session is running | Stop current processing first |
 | "Video file not found" | Missing video source | Upload or select valid video |
 | "Database connection failed" | Backend database issue | Contact administrator |
+| "Failed to load preview frame" | AI detection preview error | Check video file and try different frame |
+| "Failed to process video" | AI video processing failed | Ensure sufficient resources and try again |
+| "Video processing timeout" | Processing took too long | Try shorter video or contact support |
 
 ---
 
@@ -206,6 +257,8 @@ The system automatically:
 3. **Video Quality**: Use high-resolution, well-lit footage
 4. **Browser Maintenance**: Keep browser updated and clear cache
 5. **Network Stability**: Ensure stable internet connection
+6. **AI Video Processing**: Allow sufficient time for detection video processing
+7. **Storage Management**: Maintain adequate free disk space for video processing
 
 ### For Accurate Results
 
@@ -214,6 +267,8 @@ The system automatically:
 3. **Video Quality**: Minimum 720p resolution recommended
 4. **Processing Duration**: Allow sufficient time for analysis
 5. **Regular Calibration**: Verify detection accuracy periodically
+6. **Frame Selection**: Test different frames for optimal detection preview
+7. **Video Format**: Use MP4 format for best compatibility
 
 ---
 
@@ -224,12 +279,15 @@ The system automatically:
 - **Ctrl + L**: Focus on login fields
 - **Esc**: Close modal dialogs
 - **F5**: Reload page
+- **←**: Navigate back from AI Detection Video page
 
 ### Status Icons
 - 🟢 **Green**: System operational
 - 🟡 **Yellow**: Warning/processing
 - 🔴 **Red**: Error/offline
 - 🔵 **Blue**: Information/neutral
+- 🤖 **Robot**: AI processing active
+- 📥 **Download**: File download available
 
 ### Default Settings
 - **Junction**: Main St & 1st Ave
@@ -283,6 +341,10 @@ The Smart Traffic Management System provides powerful tools for monitoring and o
 ✅ **Manage historical data and exports**  
 ✅ **Troubleshoot common issues**  
 ✅ **Utilize cloud storage features**  
+✅ **Access AI vehicle detection video processing**  
+✅ **Preview individual frames with detection boundaries**  
+✅ **Download complete videos with AI annotations**  
+✅ **Navigate between dashboard and detection video pages**  
 
 For additional support or advanced features, consult the technical documentation or contact your system administrator.
 
