@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import io from 'socket.io-client';
 import { useAuth } from './context/AuthContext.jsx';
 import Login from './pages/Login.jsx';
+import VideoDetection from './pages/VideoDetection.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
 import NetworkStatus from './components/NetworkStatus.jsx';
@@ -411,20 +413,20 @@ function App() {
   // Show loading screen while checking authentication
   if (isLoading) {
     return (
-      <>
+      <Router>
         <NetworkStatus onStatusChange={handleNetworkStatusChange} />
         <LoadingScreen />
-      </>
+      </Router>
     );
   }
 
   // Show login page if not authenticated
   if (!isAuthenticated) {
     return (
-      <>
+      <Router>
         <NetworkStatus onStatusChange={handleNetworkStatusChange} />
         <Login />
-      </>
+      </Router>
     );
   }
 
@@ -440,20 +442,28 @@ function App() {
 
   // Authenticated user sees the dashboard
   return (
-    <>
+    <Router>
       <NetworkStatus onStatusChange={handleNetworkStatusChange} />
-      <Dashboard
-        data={trafficData}
-        history={history}
-        isProcessing={isProcessing}
-        isPolling={pollingInterval !== null}
-        networkStatus={networkStatus}
-        onStartProcessing={startProcessing}
-        onStopProcessing={stopProcessing}
-        onRefreshChart={refreshChart}
-        onLogout={logout}
-      />
-    </>
+      <Routes>
+        <Route 
+          path="/" 
+          element={
+            <Dashboard
+              data={trafficData}
+              history={history}
+              isProcessing={isProcessing}
+              isPolling={pollingInterval !== null}
+              networkStatus={networkStatus}
+              onStartProcessing={startProcessing}
+              onStopProcessing={stopProcessing}
+              onRefreshChart={refreshChart}
+              onLogout={logout}
+            />
+          } 
+        />
+        <Route path="/video-detection" element={<VideoDetection />} />
+      </Routes>
+    </Router>
   );
 }
 

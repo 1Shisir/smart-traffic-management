@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import TrafficLight from './TrafficLight.jsx';
 import VideoPreview from './VideoPreview.jsx';
 import TrafficChart from './TrafficChart.jsx';
 import ChartControls from './ChartControls.jsx';
 import AWSStorageManager from './AWSStorageManager.jsx';
-import { FaCar, FaBus, FaTruck, FaMotorcycle, FaEye, FaClock, FaCloud, FaChartLine } from 'react-icons/fa';
+import { FaCar, FaBus, FaTruck, FaMotorcycle, FaEye, FaClock, FaCloud, FaChartLine, FaRobot } from 'react-icons/fa';
 
 const Dashboard = ({ data, history, isProcessing, isPolling, networkStatus, onStartProcessing, onStopProcessing, onRefreshChart, onLogout }) => {
+  const navigate = useNavigate();
   // Default data structure to prevent undefined errors
   const defaultData = {
     count: 0,
@@ -327,6 +329,20 @@ const Dashboard = ({ data, history, isProcessing, isPolling, networkStatus, onSt
                 Live Video Feed
               </h2>
               <VideoPreview />
+              
+              {/* AI Detection Video Button */}
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => navigate('/video-detection')}
+                  className="w-full flex items-center justify-center px-4 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg font-medium transition-all duration-200 transform hover:scale-105 shadow-lg"
+                >
+                  <FaRobot className="mr-2" />
+                  AI Detection Video
+                </button>
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  Download video with vehicle detection boundaries
+                </p>
+              </div>
             </div>
           </div>
         </div>

@@ -4,6 +4,10 @@ Clean API routes with simplified Socket.IO communication (no authentication for 
 
 import logging
 import os
+import cv2
+import tempfile
+import threading
+import time
 from datetime import datetime
 from flask import Blueprint, request, jsonify, send_file, make_response, redirect, url_for
 from flask_jwt_extended import (
@@ -12,13 +16,15 @@ from flask_jwt_extended import (
 )
 from flask_socketio import emit
 from sqlalchemy import desc
+import torch
+from ultralytics import YOLO
 
 # Local imports
 from app.config import Config
 from app.models.traffic_data import TrafficData
 from app.models.user import User
 from app.services import AuthService, TrafficDataService
-from app.utils.video_processor import start_video_processing, stop_video_processing, is_processing_active
+from app.utils.video_processor import start_video_processing, stop_video_processing, is_processing_active, detect_vehicles
 from ..utils.realtime_polling import write_realtime_data, read_realtime_data
 from app import Session
 
@@ -182,6 +188,433 @@ def video_stream():
     except Exception as e:
         logger.error(f"Error serving video stream: {e}")
         return jsonify({'error': 'Failed to serve video stream'}), 500
+
+@api.route('/video-with-detection')
+def video_with_detection():
+    """Process and serve video with vehicle detection boundaries - simplified approach."""
+    try:
+        # Get video path from query parameter or use default
+        video_path = request.args.get('video_path', Config.VIDEO_PATH)
+        
+        if not os.path.exists(video_path):
+            return jsonify({'error': 'Video file not found'}), 404
+        
+        # Create temporary file for processed video
+        temp_dir = tempfile.mkdtemp()
+        timestamp = int(time.time())
+        output_filename = f'detected_video_{timestamp}.avi'
+        output_path = os.path.join(temp_dir, output_filename)
+        
+        logger.info(f"Starting simplified video processing: {video_path} -> {output_path}")
+        
+        try:
+            # Process video with simplified approach
+            success = process_video_simple_method(video_path, output_path)
+            
+            if not success:
+                # Cleanup and return error
+                try:
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                    os.rmdir(temp_dir)
+                except:
+                    pass
+                return jsonify({'error': 'Failed to process video - check backend logs for details'}), 500
+            
+            # Check if output file exists and has reasonable size
+            if not os.path.exists(output_path):
+                return jsonify({'error': 'Processed video file was not created'}), 500
+            
+            file_size = os.path.getsize(output_path)
+            if file_size < 10000:  # Less than 10KB indicates failure
+                return jsonify({'error': 'Processed video file is too small - processing may have failed'}), 500
+            
+            logger.info(f"Video processing completed successfully. File size: {file_size} bytes")
+            
+            return send_file(
+                output_path,
+                mimetype='video/x-msvideo',
+                as_attachment=True,
+                download_name=f'traffic_detected_{datetime.now().strftime("%Y%m%d_%H%M%S")}.avi'
+            )
+            
+        except Exception as e:
+            # Cleanup on error
+            try:
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+                if os.path.exists(temp_dir):
+                    os.rmdir(temp_dir)
+            except:
+                pass
+            logger.error(f"Error during video processing: {e}")
+            return jsonify({'error': f'Video processing failed: {str(e)}'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error in video_with_detection route: {e}")
+        return jsonify({'error': 'Failed to process video with detection'}), 500
+
+def process_video_simple_method(input_path, output_path):
+    """Simplified video processing that skips frames for better performance."""
+    try:
+        logger.info(f"Starting simplified processing: {input_path}")
+        
+        # Initialize YOLO model
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        logger.info(f"Using device: {device}")
+        model = YOLO(Config.YOLO_MODEL).to(device)
+        vehicle_labels = {'car', 'bus', 'truck', 'motorcycle'}
+        
+        # Open input video
+        cap = cv2.VideoCapture(input_path)
+        if not cap.isOpened():
+            logger.error(f"Cannot open video: {input_path}")
+            return False
+        
+        # Get video properties
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        logger.info(f"Video: {width}x{height}, {fps}fps, {total_frames} frames")
+        
+        # Process every 15th frame for speed (reduces 51k frames to ~3.4k)
+        frame_skip = 15
+        output_fps = max(fps / frame_skip, 5)  # Minimum 5 FPS
+        
+        # Use most reliable codec
+        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+        out = cv2.VideoWriter(output_path, fourcc, output_fps, (width, height))
+        
+        if not out.isOpened():
+            logger.error("Cannot create video writer")
+            cap.release()
+            return False
+        
+        logger.info(f"Created writer: MJPG codec, {output_fps}fps")
+        
+        frame_count = 0
+        written_count = 0
+        
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            frame_count += 1
+            
+            # Skip frames for performance
+            if frame_count % frame_skip != 0:
+                continue
+            
+            try:
+                # Simple resize to ensure exact dimensions
+                frame = cv2.resize(frame, (width, height))
+                
+                # Detect vehicles
+                total_count, class_counts, annotated_frame = detect_vehicles(frame, model, vehicle_labels)
+                
+                # Ensure annotated frame is correct size
+                annotated_frame = cv2.resize(annotated_frame, (width, height))
+                
+                # Add simple text overlay
+                text = f"Frame {frame_count} - Vehicles: {total_count}"
+                cv2.putText(annotated_frame, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                
+                # Write frame
+                out.write(annotated_frame)
+                written_count += 1
+                
+                if written_count % 100 == 0:
+                    logger.info(f"Written {written_count} frames from {frame_count} total")
+                    
+            except Exception as e:
+                logger.warning(f"Error processing frame {frame_count}: {e}")
+                # Write original frame on error
+                try:
+                    frame = cv2.resize(frame, (width, height))
+                    out.write(frame)
+                    written_count += 1
+                except:
+                    pass
+        
+        # Cleanup
+        cap.release()
+        out.release()
+        
+        if model:
+            del model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        logger.info(f"Completed: {written_count} frames written")
+        
+        # Verify output
+        if os.path.exists(output_path):
+            size = os.path.getsize(output_path)
+            logger.info(f"Output file size: {size} bytes")
+            return size > 10000  # Must be at least 10KB
+        
+        return False
+        
+    except Exception as e:
+        logger.error(f"Error in process_video_simple_method: {e}")
+        return False
+
+def process_video_with_boundaries(input_path, output_path):
+    """Process video file and add detection boundaries."""
+    try:
+        # Initialize YOLO model
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        model = YOLO(Config.YOLO_MODEL).to(device)
+        vehicle_labels = {'car', 'bus', 'truck', 'motorcycle'}
+        
+        # Open input video
+        cap = cv2.VideoCapture(input_path)
+        if not cap.isOpened():
+            logger.error(f"Cannot open video file: {input_path}")
+            return False
+        
+        # Get video properties and ensure they're valid
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        # Ensure FPS is valid
+        if fps <= 0 or fps > 60:
+            fps = 25.0  # Default to 25 FPS
+        
+        # Ensure dimensions are even numbers (required by many codecs)
+        width = width if width % 2 == 0 else width - 1
+        height = height if height % 2 == 0 else height - 1
+        
+        logger.info(f"Video properties: {width}x{height}, {fps} FPS, {total_frames} frames")
+        
+        # Try different codecs in order of preference (most compatible first)
+        output_created = False
+        codecs_to_try = [
+            ('XVID', 'XVID'),  # Xvid MPEG-4 - most compatible
+            ('MJPG', 'MJPG'),  # Motion JPEG - very reliable
+            ('mp4v', 'MP4V'),  # MPEG-4 Part 2
+            ('X264', 'H264'),  # H.264 - last resort
+        ]
+        
+        out = None
+        for codec_name, codec_fourcc in codecs_to_try:
+            try:
+                fourcc = cv2.VideoWriter_fourcc(*codec_name)
+                out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+                
+                if out.isOpened():
+                    logger.info(f"Successfully created video writer with codec: {codec_name}")
+                    output_created = True
+                    break
+                else:
+                    if out:
+                        out.release()
+                    logger.warning(f"Failed to create video writer with codec: {codec_name}")
+            except Exception as e:
+                logger.warning(f"Error with codec {codec_name}: {e}")
+                if out:
+                    out.release()
+        
+        if not output_created:
+            logger.error("Failed to create video writer with any codec")
+            cap.release()
+            return False
+        
+        logger.info(f"Processing {total_frames} frames...")
+        
+        frame_count = 0
+        successful_writes = 0
+        
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            frame_count += 1
+            
+            try:
+                # Ensure frame has correct dimensions
+                if frame.shape[1] != width or frame.shape[0] != height:
+                    frame = cv2.resize(frame, (width, height))
+                
+                # Detect vehicles and get annotated frame
+                total_count, class_counts, annotated_frame = detect_vehicles(frame, model, vehicle_labels)
+                
+                # Ensure annotated frame has correct dimensions
+                if annotated_frame.shape[1] != width or annotated_frame.shape[0] != height:
+                    annotated_frame = cv2.resize(annotated_frame, (width, height))
+                
+                # Add frame counter and detection info with better positioning
+                info_text = f"Frame: {frame_count}/{total_frames} | Vehicles: {total_count}"
+                cv2.putText(annotated_frame, info_text, (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)  # Black outline
+                cv2.putText(annotated_frame, info_text, (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)  # White text
+                
+                # Add vehicle counts by type
+                y_offset = 55
+                for vehicle_type, count in class_counts.items():
+                    if count > 0:
+                        count_text = f"{vehicle_type.capitalize()}: {count}"
+                        cv2.putText(annotated_frame, count_text, (10, y_offset), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 2)  # Black outline
+                        cv2.putText(annotated_frame, count_text, (10, y_offset), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)  # White text
+                        y_offset += 20
+                
+                # Ensure frame is in correct format (BGR)
+                if len(annotated_frame.shape) == 3 and annotated_frame.shape[2] == 3:
+                    # Write frame to output video
+                    success = out.write(annotated_frame)
+                    if success:
+                        successful_writes += 1
+                    else:
+                        logger.warning(f"Failed to write frame {frame_count}")
+                else:
+                    logger.warning(f"Frame {frame_count} has incorrect format: {annotated_frame.shape}")
+                
+                # Log progress every 100 frames
+                if frame_count % 100 == 0:
+                    success_rate = (successful_writes / frame_count) * 100
+                    logger.info(f"Processed {frame_count}/{total_frames} frames (Success rate: {success_rate:.1f}%)")
+                    
+            except Exception as e:
+                logger.error(f"Error processing frame {frame_count}: {e}")
+                # Try to write original frame if detection fails
+                try:
+                    if frame.shape[1] != width or frame.shape[0] != height:
+                        frame = cv2.resize(frame, (width, height))
+                    out.write(frame)
+                except Exception as write_error:
+                    logger.error(f"Failed to write original frame {frame_count}: {write_error}")
+        
+        # Release everything
+        cap.release()
+        out.release()
+        
+        # Clean up model memory
+        del model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        # Check if output file was created successfully
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:  # At least 1KB
+            final_success_rate = (successful_writes / frame_count) * 100 if frame_count > 0 else 0
+            logger.info(f"Video processing completed successfully!")
+            logger.info(f"Total frames processed: {frame_count}")
+            logger.info(f"Successful writes: {successful_writes} ({final_success_rate:.1f}%)")
+            logger.info(f"Output file size: {os.path.getsize(output_path)} bytes")
+            return True
+        else:
+            logger.error("Output video file was not created properly")
+            return False
+        
+    except Exception as e:
+        logger.error(f"Error in process_video_with_boundaries: {e}")
+        return False
+
+@api.route('/video-detection-preview')
+def video_detection_preview():
+    """Get a single frame from video with detection boundaries for preview."""
+    try:
+        # Get video path and frame number from query parameters
+        video_path = request.args.get('video_path', Config.VIDEO_PATH)
+        frame_number = int(request.args.get('frame', 0))
+        
+        if not os.path.exists(video_path):
+            return jsonify({'error': 'Video file not found'}), 404
+        
+        # Initialize YOLO model
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        model = YOLO(Config.YOLO_MODEL).to(device)
+        vehicle_labels = {'car', 'bus', 'truck', 'motorcycle'}
+        
+        # Open video and seek to frame
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return jsonify({'error': 'Cannot open video file'}), 500
+        
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        frame_number = min(frame_number, total_frames - 1)
+        
+        # Seek to specific frame
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+        ret, frame = cap.read()
+        
+        if not ret:
+            cap.release()
+            return jsonify({'error': 'Failed to read frame'}), 500
+        
+        # Detect vehicles and get annotated frame
+        total_count, class_counts, annotated_frame = detect_vehicles(frame, model, vehicle_labels)
+        
+        # Add detection info to frame
+        info_text = f"Frame: {frame_number}/{total_frames} | Vehicles: {total_count}"
+        cv2.putText(annotated_frame, info_text, (10, 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        
+        # Encode frame as JPEG
+        success, buffer = cv2.imencode('.jpg', annotated_frame)
+        if not success:
+            cap.release()
+            return jsonify({'error': 'Failed to encode frame'}), 500
+        
+        # Cleanup
+        cap.release()
+        del model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        # Return image
+        response = make_response(buffer.tobytes())
+        response.headers['Content-Type'] = 'image/jpeg'
+        response.headers['Cache-Control'] = 'no-cache'
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating detection preview: {e}")
+        return jsonify({'error': 'Failed to generate preview'}), 500
+
+@api.route('/video-processing-status')
+def video_processing_status():
+    """Get the current status of video processing."""
+    try:
+        # This is a simple status endpoint
+        # In a production system, you'd want to store processing status in a database or cache
+        
+        # For now, we'll check if there are any temp files being processed
+        temp_dir = tempfile.gettempdir()
+        processing_files = []
+        
+        try:
+            for filename in os.listdir(temp_dir):
+                if filename.startswith('detected_video_') and filename.endswith('.mp4'):
+                    file_path = os.path.join(temp_dir, filename)
+                    if os.path.exists(file_path):
+                        file_size = os.path.getsize(file_path)
+                        # Estimate if file is still being written to
+                        processing_files.append({
+                            'filename': filename,
+                            'size': file_size,
+                            'created': os.path.getctime(file_path)
+                        })
+        except Exception as e:
+            logger.warning(f"Error checking processing status: {e}")
+        
+        return jsonify({
+            'processing_active': len(processing_files) > 0,
+            'processing_files': len(processing_files),
+            'message': 'Processing in progress...' if processing_files else 'No active processing'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting processing status: {e}")
+        return jsonify({'error': 'Failed to get processing status'}), 500
 
 @api.route('/realtime-status')
 def get_realtime_status():
