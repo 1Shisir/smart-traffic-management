@@ -36,7 +36,7 @@ class Config:
     # File Paths
     VIDEO_PATH = os.getenv(
         'VIDEO_PATH',
-        os.path.abspath(os.path.join(BASE_DIR, '..', 'traffic_sample1.mp4'))
+        os.path.abspath(os.path.join(BASE_DIR, '..', 'traffic_sample2.mp4'))
     )
     YOLO_MODEL = os.getenv(
         'YOLO_MODEL',
