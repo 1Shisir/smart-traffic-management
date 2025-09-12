@@ -8,6 +8,10 @@ const AWSStorageManager = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [activeTab, setActiveTab] = useState('status');
   const [loading, setLoading] = useState(true);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [statusError, setStatusError] = useState(null);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesError, setFilesError] = useState(null);
 
   useEffect(() => {
     loadAWSStatus();
@@ -16,25 +20,83 @@ const AWSStorageManager = () => {
 
   const loadAWSStatus = async () => {
     try {
-      const response = await fetch('/api/aws/status');
+      setStatusLoading(true);
+      setStatusError(null);
+      
+      // Add timeout to the fetch request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+      
+      const response = await fetch('/api/aws/status', {
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       setAwsStatus(data);
+      
     } catch (error) {
       console.error('Failed to load AWS status:', error);
+      
+      const errorMessage = error.name === 'AbortError' ? 'Request timed out' : error.message;
+      setStatusError(errorMessage);
+      
+      // Set a fallback status when AWS is unavailable
+      setAwsStatus({
+        success: false,
+        aws_available: false,
+        error: errorMessage,
+        stats: {
+          available: false,
+          reason: error.name === 'AbortError' ? 'Connection timeout' : 'Service unavailable'
+        }
+      });
     } finally {
+      setStatusLoading(false);
       setLoading(false);
     }
   };
 
   const loadFiles = async (prefix = '') => {
     try {
-      const response = await fetch(`/api/aws/files?prefix=${prefix}&limit=50`);
+      setFilesLoading(true);
+      setFilesError(null);
+      
+      // Add timeout to the fetch request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
+      const response = await fetch(`/api/aws/files?prefix=${prefix}&limit=50`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       if (data.success) {
         setFiles(data.files);
+      } else {
+        throw new Error(data.error || 'Failed to load files');
       }
     } catch (error) {
       console.error('Failed to load files:', error);
+      const errorMessage = error.name === 'AbortError' ? 'Request timed out' : error.message;
+      setFilesError(errorMessage);
+      setFiles([]); // Set empty array on error
+    } finally {
+      setFilesLoading(false);
     }
   };
 
@@ -264,18 +326,32 @@ const AWSStorageManager = () => {
       {/* Status Tab */}
       {activeTab === 'status' && (
         <div className="space-y-4">
-          <div className={`p-4 rounded-lg ${
-            awsStatus?.aws_available ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
-          }`}>
-            <div className="flex items-center">
-              <div className={`w-3 h-3 rounded-full mr-2 ${
-                awsStatus?.aws_available ? 'bg-green-500' : 'bg-red-500'
-              }`}></div>
-              <span className="font-medium">
-                AWS S3 Status: {awsStatus?.aws_available ? 'Connected' : 'Disconnected'}
-              </span>
+          {statusLoading ? (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+                <span>Checking AWS S3 connection...</span>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className={`p-4 rounded-lg ${
+              awsStatus?.aws_available ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+            }`}>
+              <div className="flex items-center">
+                <div className={`w-3 h-3 rounded-full mr-2 ${
+                  awsStatus?.aws_available ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+                <span className="font-medium">
+                  AWS S3 Status: {awsStatus?.aws_available ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+              {!awsStatus?.aws_available && (
+                <div className="mt-2 text-sm text-red-600">
+                  {statusError || 'Unable to connect to AWS S3. Please check your credentials and internet connection.'}
+                </div>
+              )}
+            </div>
+          )}
 
           {awsStatus?.aws_available && awsStatus.stats && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -284,7 +360,9 @@ const AWSStorageManager = () => {
                   <FaDatabase className="text-blue-500 mr-2" />
                   <div>
                     <p className="text-sm text-gray-600">Total Storage</p>
-                    <p className="text-lg font-semibold">{awsStatus.stats.total_size_mb} MB</p>
+                    <p className="text-lg font-semibold">
+                      {awsStatus.stats.total_size_mb === 'N/A' ? 'N/A' : `${awsStatus.stats.total_size_mb} MB`}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -327,6 +405,15 @@ const AWSStorageManager = () => {
                   <p className="text-lg font-semibold">{awsStatus.stats.frames_count}</p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {awsStatus?.aws_available && awsStatus.stats?.note && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-700">
+                <strong>Note:</strong> Detailed file counts are temporarily disabled for faster loading times. 
+                AWS S3 is connected and fully functional.
+              </p>
             </div>
           )}
         </div>
@@ -374,98 +461,121 @@ const AWSStorageManager = () => {
       {/* Files Tab */}
       {activeTab === 'files' && (
         <div className="space-y-4">
-          <div className="flex space-x-2">
-            <button
-              onClick={() => loadFiles('')}
-              className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded"
-            >
-              All
-            </button>
-            <button
-              onClick={() => loadFiles('videos/')}
-              className="px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 rounded"
-            >
-              Videos
-            </button>
-            <button
-              onClick={() => loadFiles('analytics/')}
-              className="px-3 py-1 text-sm bg-green-100 hover:bg-green-200 rounded"
-            >
-              Analytics
-            </button>
-            <button
-              onClick={() => loadFiles('processed_frames/')}
-              className="px-3 py-1 text-sm bg-purple-100 hover:bg-purple-200 rounded"
-            >
-              Frames
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    File Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Size
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Modified
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {files.map((file, index) => (
-                  <tr key={index}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {file.key.split('/').pop()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {getFileType(file.key)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatFileSize(file.size)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(file.last_modified).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => downloadFile(file.key, file.key.split('/').pop())}
-                          className="text-blue-600 hover:text-blue-900 p-1"
-                          title="Download file"
-                        >
-                          <FaDownload />
-                        </button>
-                        <button
-                          onClick={() => deleteFile(file.key)}
-                          className="text-red-600 hover:text-red-900 p-1"
-                          title="Delete file"
-                        >
-                          <FaTrash />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {files.length === 0 && (
-              <div className="text-center py-8 text-gray-500">
-                No files found
+          {!awsStatus?.aws_available ? (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <p className="text-yellow-800">AWS S3 is not available. Please check your configuration.</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => loadFiles('')}
+                  className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded"
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => loadFiles('videos/')}
+                  className="px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 rounded"
+                >
+                  Videos
+                </button>
+                <button
+                  onClick={() => loadFiles('analytics/')}
+                  className="px-3 py-1 text-sm bg-green-100 hover:bg-green-200 rounded"
+                >
+                  Analytics
+                </button>
+                <button
+                  onClick={() => loadFiles('processed_frames/')}
+                  className="px-3 py-1 text-sm bg-purple-100 hover:bg-purple-200 rounded"
+                >
+                  Frames
+                </button>
               </div>
-            )}
-          </div>
+
+              {filesLoading ? (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+                    <span>Loading files...</span>
+                  </div>
+                </div>
+              ) : filesError ? (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-red-800">Error loading files: {filesError}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          File Name
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Type
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Size
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Modified
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {files.length === 0 ? (
+                        <tr>
+                          <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                            No files found in AWS S3
+                          </td>
+                        </tr>
+                      ) : (
+                        files.map((file, index) => (
+                          <tr key={index}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {file.key.split('/').pop()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {getFileType(file.key)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {formatFileSize(file.size)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {new Date(file.last_modified).toLocaleDateString()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              <div className="flex space-x-2">
+                                <button
+                                  onClick={() => downloadFile(file.key, file.key.split('/').pop())}
+                                  className="text-blue-600 hover:text-blue-900 p-1"
+                                  title="Download file"
+                                >
+                                  <FaDownload />
+                                </button>
+                                <button
+                                  onClick={() => deleteFile(file.key)}
+                                  className="text-red-600 hover:text-red-900 p-1"
+                                  title="Delete file"
+                                >
+                                  <FaTrash />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

@@ -332,46 +332,94 @@ class AWSStorageService:
     
     def get_storage_stats(self) -> Dict[str, Any]:
         """
-        Get storage statistics
+        Get storage statistics with timeout protection
         
         Returns:
             Dictionary with storage statistics
         """
         if not self.is_available():
-            return {'available': False}
+            return {
+                'available': False, 
+                'reason': 'AWS service not initialized',
+                'total_objects': 0,
+                'total_size_mb': 0,
+                'bucket_name': self.bucket_name or 'N/A',
+                'region': self.region_name or 'N/A',
+                'videos_count': 0,
+                'analytics_count': 0,
+                'frames_count': 0,
+                'other_count': 0
+            }
         
         try:
-            # Get bucket size and object count
-            response = self.s3_client.list_objects_v2(Bucket=self.bucket_name)
+            # Quick availability check first with timeout
+            import boto3
+            from botocore.config import Config as BotoConfig
             
-            total_size = 0
-            object_count = 0
+            # Create a client with short timeout for status check
+            quick_client = boto3.client(
+                's3',
+                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+                region_name=self.region_name,
+                config=BotoConfig(
+                    connect_timeout=5,  # 5 seconds connection timeout
+                    read_timeout=10,    # 10 seconds read timeout
+                    retries={'max_attempts': 1}  # No retries for quick check
+                )
+            )
             
-            if 'Contents' in response:
-                for obj in response['Contents']:
-                    total_size += obj['Size']
-                    object_count += 1
+            # Just check if bucket exists (much faster than listing objects)
+            quick_client.head_bucket(Bucket=self.bucket_name)
             
-            # Get objects by type
-            videos = len([obj for obj in response.get('Contents', []) if obj['Key'].startswith('videos/')])
-            analytics = len([obj for obj in response.get('Contents', []) if obj['Key'].startswith('analytics/')])
-            frames = len([obj for obj in response.get('Contents', []) if obj['Key'].startswith('processed_frames/')])
-            
+            # Return basic stats with default values for quick response
+            # Note: Detailed object counting disabled for performance
             return {
                 'available': True,
                 'bucket_name': self.bucket_name,
                 'region': self.region_name,
-                'total_size_bytes': total_size,
-                'total_size_mb': round(total_size / (1024 * 1024), 2),
-                'total_objects': object_count,
-                'videos_count': videos,
-                'analytics_count': analytics,
-                'frames_count': frames
+                'status': 'connected',
+                'total_objects': 'N/A',  # Disabled for performance
+                'total_size_mb': 'N/A',  # Disabled for performance  
+                'videos_count': 'N/A',   # Disabled for performance
+                'analytics_count': 'N/A', # Disabled for performance
+                'frames_count': 'N/A',   # Disabled for performance
+                'other_count': 'N/A',    # Disabled for performance
+                'last_checked': datetime.now().isoformat(),
+                'note': 'Quick status check - detailed stats disabled for performance'
             }
             
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            logger.error(f"AWS ClientError getting storage stats: {error_code} - {e}")
+            return {
+                'available': False, 
+                'error': f'AWS Error: {error_code}',
+                'reason': 'AWS access error - check credentials and permissions',
+                'total_objects': 0,
+                'total_size_mb': 0,
+                'bucket_name': self.bucket_name or 'N/A',
+                'region': self.region_name or 'N/A',
+                'videos_count': 0,
+                'analytics_count': 0,
+                'frames_count': 0,
+                'other_count': 0
+            }
         except Exception as e:
             logger.error(f"Failed to get storage stats: {e}")
-            return {'available': False, 'error': str(e)}
+            return {
+                'available': False, 
+                'error': str(e),
+                'reason': 'Connection timeout or network error',
+                'total_objects': 0,
+                'total_size_mb': 0,
+                'bucket_name': self.bucket_name or 'N/A',
+                'region': self.region_name or 'N/A',
+                'videos_count': 0,
+                'analytics_count': 0,
+                'frames_count': 0,
+                'other_count': 0
+            }
 
 # Global instance
 aws_storage = AWSStorageService()

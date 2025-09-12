@@ -19,19 +19,54 @@ aws_bp = Blueprint('aws', __name__, url_prefix='/api/aws')
 
 @aws_bp.route('/status', methods=['GET'])
 def get_aws_status():
-    """Get AWS service status and statistics"""
+    """Get AWS service status and statistics with timeout protection"""
     try:
-        stats = aws_storage.get_storage_stats()
+        # For Windows compatibility, use threading timeout
+        import threading
+        import time
+        
+        result = {}
+        exception_occurred = {}
+        
+        def get_stats():
+            try:
+                result['stats'] = aws_storage.get_storage_stats()
+            except Exception as e:
+                exception_occurred['error'] = e
+        
+        # Start the AWS call in a separate thread with timeout
+        thread = threading.Thread(target=get_stats)
+        thread.daemon = True
+        thread.start()
+        thread.join(timeout=15)  # 15 second timeout
+        
+        if thread.is_alive():
+            # Thread is still running - timeout occurred
+            logger.warning("AWS status check timed out after 15 seconds")
+            return jsonify({
+                'success': False,
+                'aws_available': False,
+                'error': 'AWS status check timed out',
+                'stats': {'available': False, 'reason': 'Timeout after 15 seconds'}
+            }), 408
+        
+        if 'error' in exception_occurred:
+            raise exception_occurred['error']
+        
+        stats = result.get('stats', {'available': False})
         return jsonify({
             'success': True,
             'aws_available': stats.get('available', False),
             'stats': stats
         })
+        
     except Exception as e:
         logger.error(f"Error getting AWS status: {e}")
         return jsonify({
             'success': False,
-            'error': str(e)
+            'aws_available': False,
+            'error': str(e),
+            'stats': {'available': False, 'reason': 'Service error'}
         }), 500
 
 @aws_bp.route('/upload/video', methods=['POST'])
